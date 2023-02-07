@@ -17,41 +17,17 @@
 
 package org.apache.openwhisk.core.containerpool
 
-import akka.actor.Actor
-import akka.actor.ActorRef
-import akka.actor.Cancellable
-import java.time.Instant
-
 import akka.actor.Status.{Failure => FailureMessage}
-import akka.actor.{FSM, Props, Stash}
+import akka.actor.{Actor, ActorRef, Cancellable, FSM, Props, Stash}
 import akka.event.Logging.InfoLevel
-import akka.io.IO
-import akka.io.Tcp
-import akka.io.Tcp.Close
-import akka.io.Tcp.CommandFailed
-import akka.io.Tcp.Connect
-import akka.io.Tcp.Connected
+import akka.io.Tcp.{Close, CommandFailed, Connect, Connected}
+import akka.io.{IO, Tcp}
 import akka.pattern.pipe
-import pureconfig.loadConfigOrThrow
-import pureconfig.generic.auto._
-import java.net.InetSocketAddress
-import java.net.SocketException
-
-import org.apache.openwhisk.common.MetricEmitter
 import org.apache.openwhisk.common.TransactionId.systemPrefix
-
-import scala.collection.immutable
-import spray.json.DefaultJsonProtocol._
-import spray.json._
-import org.apache.openwhisk.common.{AkkaLogging, Counter, LoggingMarkers, TransactionId}
+import org.apache.openwhisk.common._
 import org.apache.openwhisk.core.ConfigKeys
 import org.apache.openwhisk.core.ack.ActiveAck
-import org.apache.openwhisk.core.connector.{
-  ActivationMessage,
-  CombinedCompletionAndResultMessage,
-  CompletionMessage,
-  ResultMessage
-}
+import org.apache.openwhisk.core.connector.{ActivationMessage, CombinedCompletionAndResultMessage, CompletionMessage, ResultMessage}
 import org.apache.openwhisk.core.containerpool.logging.LogCollectingException
 import org.apache.openwhisk.core.database.UserContext
 import org.apache.openwhisk.core.entity.ExecManifest.ImageName
@@ -59,7 +35,14 @@ import org.apache.openwhisk.core.entity._
 import org.apache.openwhisk.core.entity.size._
 import org.apache.openwhisk.core.invoker.Invoker.LogsCollector
 import org.apache.openwhisk.http.Messages
+import pureconfig.generic.auto._
+import pureconfig.loadConfigOrThrow
+import spray.json.DefaultJsonProtocol._
+import spray.json._
 
+import java.net.{InetSocketAddress, SocketException}
+import java.time.Instant
+import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
@@ -772,6 +755,7 @@ class ContainerProxy(factory: (TransactionId,
    */
   def initializeAndRun(container: Container, job: Run, reschedule: Boolean = false)(
     implicit tid: TransactionId): Future[WhiskActivation] = {
+
     val actionTimeout = job.action.limits.timeout.duration
     val unlockedArgs =
       ContainerProxy.unlockArguments(job.msg.content, job.msg.lockedArgs, ParameterEncryption.singleton)
@@ -823,6 +807,8 @@ class ContainerProxy(factory: (TransactionId,
           // compute deadline on invoker side avoids discrepancies inside container
           // but potentially under-estimates actual deadline
           "deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)
+
+        ContainerBinding(job.msg).analyse(container)
 
         container
           .run(
