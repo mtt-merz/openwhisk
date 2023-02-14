@@ -824,6 +824,9 @@ class ContainerProxy(factory: (TransactionId,
           // but potentially under-estimates actual deadline
           "deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)
 
+        // Bind XActor instance to this container; if already bound assure it is the right one
+        ContainerBinding(job.msg).bind(container)
+
         container
           .run(
             parameters,
