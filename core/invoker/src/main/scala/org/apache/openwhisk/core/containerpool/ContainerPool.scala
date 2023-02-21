@@ -314,6 +314,9 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
 
     case AdjustPrewarmedContainer =>
       adjustPrewarmedContainer(false, true)
+
+    case ForwardChangeOffsetRequest(offset) =>
+      feed ! MessageFeed.ChangeOffset(offset)
   }
 
   /** Resend next item in the buffer, or trigger next item in the feed, if no items in the buffer. */

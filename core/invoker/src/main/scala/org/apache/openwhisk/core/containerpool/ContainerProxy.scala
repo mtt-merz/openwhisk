@@ -207,6 +207,7 @@ case object RescheduleJob // job is sent back to parent and could not be process
 case class PreWarmCompleted(data: PreWarmedData)
 case class InitCompleted(data: WarmedData)
 case object RunCompleted
+case class ForwardChangeOffsetRequest(offset: Long)
 
 /**
  * A proxy that wraps a Container. It is used to keep track of the lifecycle
@@ -824,7 +825,7 @@ class ContainerProxy(factory: (TransactionId,
           // but potentially under-estimates actual deadline
           "deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)
 
-        // Bind XActor instance to this container; if already bound assure it is the right one
+        // bind XActor instance to this container; if already bound assure it is the right one
         ContainerBinding(job.msg).bind(container)
 
         container
@@ -836,6 +837,18 @@ class ContainerProxy(factory: (TransactionId,
             reschedule)(job.msg.transid)
           .map {
             case (runInterval, response) =>
+              println(s"\n$response\n")
+
+              for (error <- response.result.get.asJsObject().fields.get("error"))
+                error.asJsObject().getFields("code").head.asInstanceOf[JsString].value match {
+                  // restore queue
+                  case "SHOULD_CHANGE_OFFSET" =>
+                    val offset = error.asJsObject().getFields("data").head.asInstanceOf[JsNumber].value.longValue()
+                    context.parent ! ForwardChangeOffsetRequest(offset)
+
+                  case "" =>
+                }
+
               val initRunInterval = initInterval
                 .map(i => Interval(runInterval.start.minusMillis(i.duration.toMillis), runInterval.end))
                 .getOrElse(runInterval)
@@ -888,7 +901,7 @@ class ContainerProxy(factory: (TransactionId,
         }
     }
 
-    val context = UserContext(job.msg.user)
+    val userContext = UserContext(job.msg.user)
 
     // Adds logs to the raw activation.
     val activationWithLogs: Future[Either[ActivationLogReadingError, WhiskActivation]] = activation
@@ -929,7 +942,7 @@ class ContainerProxy(factory: (TransactionId,
                 job.msg.user.namespace.uuid,
                 CompletionMessage(tid, activation, instance)))
         }
-        storeActivation(tid, activation, job.msg.blocking, context)
+        storeActivation(tid, activation, job.msg.blocking, userContext)
       }
 
     // Disambiguate activation errors and transform the Either into a failed/successful Future respectively.

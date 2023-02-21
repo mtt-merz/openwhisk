@@ -15,7 +15,7 @@ case class XActor(id: String, kind: String) {
 
 object XActor {
   def apply(msg: ActivationMessage): XActor = {
-    val id = msg.content.get.asJsObject.getFields("id").head.asInstanceOf[JsString].value
+    val id = msg.getContentField("id").asInstanceOf[JsString].value
     val kind = msg.action.name.asString
 
     new XActor(id, kind)

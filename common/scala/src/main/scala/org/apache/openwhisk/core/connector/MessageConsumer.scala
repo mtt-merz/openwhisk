@@ -28,6 +28,7 @@ import akka.actor.FSM
 import akka.pattern.pipe
 import org.apache.openwhisk.common.Logging
 import org.apache.openwhisk.common.TransactionId
+import org.apache.openwhisk.connector.kafka.KafkaConsumerConnector
 
 trait MessageConsumer {
 
@@ -55,6 +56,12 @@ trait MessageConsumer {
 
 }
 
+case class KafkaNotEnabled(operation: String)
+  extends Exception(
+    s"The operation $operation needs Kafka." +
+      s"MessageProvider SPI should be set to 'org.apache.openwhisk.connector.kafka.KafkaMessagingProvider'")
+
+
 object MessageFeed {
   protected sealed trait FeedState
   protected[connector] case object Idle extends FeedState
@@ -72,6 +79,9 @@ object MessageFeed {
 
   /** Indicates the fill operation has completed. */
   private case class FillCompleted(messages: Seq[(String, Int, Long, Array[Byte])])
+
+  /** Indicates the consumer should move back the offset to a valid state. */
+  case class ChangeOffset(offset: Long)
 }
 
 /**
@@ -151,6 +161,10 @@ class MessageFeed(description: String,
         goto(DrainingPipeline)
       }
 
+    case Event(ChangeOffset(offset), _) =>
+      changeConsumerOffset(offset)
+      stay
+
     case _ => stay
   }
 
@@ -162,6 +176,10 @@ class MessageFeed(description: String,
         fillPipeline()
         goto(FillingPipeline)
       } else stay
+
+    case Event(ChangeOffset(offset), _) =>
+      changeConsumerOffset(offset)
+      stay
 
     case _ => stay
   }
@@ -244,4 +262,11 @@ class MessageFeed(description: String,
       maximumHandlerCapacity
     }
   }
+
+  private def changeConsumerOffset(offset: Long): Unit =
+    consumer match {
+      case consumer: KafkaConsumerConnector => consumer.changeOffset(offset)
+      case _ =>
+        throw KafkaNotEnabled("changeConsumerOffset")
+    }
 }
