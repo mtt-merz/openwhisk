@@ -72,6 +72,13 @@ case class ActivationMessage(override val transid: TransactionId,
   }
 
   def causedBySequence: Boolean = cause.isDefined
+
+  def getContentField(field: String): JsValue = content.get.asJsObject.getFields(field).head
+
+  def addContentField(field: (String, JsValue)): ActivationMessage = {
+    val map: Map[String, JsValue] = content.get.asJsObject().fields + field
+    copy(content = Option(JsObject(map)))
+  }
 }
 
 /**
