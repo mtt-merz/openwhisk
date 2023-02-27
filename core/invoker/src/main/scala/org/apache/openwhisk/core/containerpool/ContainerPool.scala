@@ -20,7 +20,7 @@ package org.apache.openwhisk.core.containerpool
 import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
 import org.apache.openwhisk.common.{Logging, LoggingMarkers, MetricEmitter, TransactionId}
 import org.apache.openwhisk.core.connector.MessageFeed
-import org.apache.openwhisk.core.containerpool.ContainerBinding._
+import org.apache.openwhisk.core.containerpool.XActorController._
 import org.apache.openwhisk.core.entity.ExecManifest.ReactivePrewarmingConfig
 import org.apache.openwhisk.core.entity._
 import org.apache.openwhisk.core.entity.size._
@@ -120,7 +120,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
     // Run messages are received either via the feed or from child containers which cannot process
     // their requests and send them back to the pool for rescheduling (this may happen if "docker" operations
     // fail for example, or a container has aged and was destroying itself when a new request was assigned)
-    case r: Run =>
+    case r: Run if r.shouldBeExecuted =>
       // Check if the message is resent from the buffer. Only the first message on the buffer can be resent.
       val isResentFromBuffer = runBuffer.nonEmpty && runBuffer.dequeueOption.exists(_._1.msg == r.msg)
 
@@ -136,7 +136,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
         val memory = r.action.limits.memory.megabytes.MB
 
         val warmContainer = ContainerPool.schedule(r, freePool)
-        if (warmContainer.isEmpty && ContainerBinding(r.msg).isBound) {
+        if (warmContainer.isEmpty && XActorController.of(r).isBound) {
           // XActor is bound to a container but it is busy, enqueue request for future execution
           if (!runBuffer.contains(r)) runBuffer = runBuffer.enqueue(r)
           logging.info(this, s"Designated container is busy, add request ${r.msg.activationId} to queue")
@@ -275,12 +275,14 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
     case ContainerRemoved(replacePrewarm) =>
       // if container was in free pool, it may have been processing (but under capacity),
       // so there is capacity to accept another job request
-      freePool.get(sender()).foreach { f =>
+      freePool.get(sender()).foreach { c =>
+        XActorController.removeContainer(c.getContainer.get)
         freePool = freePool - sender()
       }
 
       // container was busy (busy indicates at full capacity), so there is capacity to accept another job request
-      busyPool.get(sender()).foreach { _ =>
+      busyPool.get(sender()).foreach { c =>
+        XActorController.removeContainer(c.getContainer.get)
         busyPool = busyPool - sender()
       }
       processBufferOrFeed()
@@ -515,7 +517,8 @@ object ContainerPool {
    * @return a container if one found
    */
   protected[containerpool] def schedule[A](job: Run,
-                                           idles: Map[A, ContainerData]): Option[(A, ContainerData)] = {
+                                           idles: Map[A, ContainerData])
+                                          (implicit logging: Logging): Option[(A, ContainerData)] = {
     val invocationNamespace = job.msg.user.namespace.name
     val action = job.action
 

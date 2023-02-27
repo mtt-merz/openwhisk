@@ -826,7 +826,7 @@ class ContainerProxy(factory: (TransactionId,
           "deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)
 
         // bind XActor instance to this container; if already bound assure it is the right one
-        ContainerBinding(job.msg).bind(container)
+        XActorController.of(job).bind(container)
 
         container
           .run(
@@ -838,16 +838,7 @@ class ContainerProxy(factory: (TransactionId,
           .map {
             case (runInterval, response) =>
               println(s"\n$response\n")
-
-              for (error <- response.result.get.asJsObject().fields.get("error"))
-                error.asJsObject().getFields("code").head.asInstanceOf[JsString].value match {
-                  // restore queue
-                  case "SHOULD_CHANGE_OFFSET" =>
-                    val offset = error.asJsObject().getFields("data").head.asInstanceOf[JsNumber].value.longValue()
-                    context.parent ! ForwardChangeOffsetRequest(offset)
-
-                  case "" =>
-                }
+              XActorController.of(job).update(job)
 
               val initRunInterval = initInterval
                 .map(i => Interval(runInterval.start.minusMillis(i.duration.toMillis), runInterval.end))
