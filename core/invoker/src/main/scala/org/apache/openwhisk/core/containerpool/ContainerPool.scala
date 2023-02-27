@@ -276,13 +276,17 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
       // if container was in free pool, it may have been processing (but under capacity),
       // so there is capacity to accept another job request
       freePool.get(sender()).foreach { c =>
-        XActorController.removeContainer(c.getContainer.get)
+        XActorController
+          .removeContainer(c.getContainer.get)
+          .foreach(offset => feed ! MessageFeed.ChangeOffset(offset))
         freePool = freePool - sender()
       }
 
       // container was busy (busy indicates at full capacity), so there is capacity to accept another job request
       busyPool.get(sender()).foreach { c =>
-        XActorController.removeContainer(c.getContainer.get)
+        XActorController
+          .removeContainer(c.getContainer.get)
+          .foreach(offset => feed ! MessageFeed.ChangeOffset(offset))
         busyPool = busyPool - sender()
       }
       processBufferOrFeed()
@@ -316,9 +320,6 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
 
     case AdjustPrewarmedContainer =>
       adjustPrewarmedContainer(false, true)
-
-    case ForwardChangeOffsetRequest(offset) =>
-      feed ! MessageFeed.ChangeOffset(offset)
   }
 
   /** Resend next item in the buffer, or trigger next item in the feed, if no items in the buffer. */

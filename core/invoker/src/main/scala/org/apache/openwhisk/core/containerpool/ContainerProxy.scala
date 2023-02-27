@@ -207,7 +207,6 @@ case object RescheduleJob // job is sent back to parent and could not be process
 case class PreWarmCompleted(data: PreWarmedData)
 case class InitCompleted(data: WarmedData)
 case object RunCompleted
-case class ForwardChangeOffsetRequest(offset: Long)
 
 /**
  * A proxy that wraps a Container. It is used to keep track of the lifecycle

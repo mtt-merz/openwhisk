@@ -81,13 +81,24 @@ object XActorController {
     })
   }
 
-  def removeContainer(container: Container): Unit = {
+  /**
+   * Un-bind the controllers bound to the given container and calculate the offset to restore.
+   *
+   * @param container defines the controllers to un-bind.
+   * @return the offset to restore.
+   */
+  def removeContainer(container: Container): Option[Long] = {
     val containerId = container.containerId
+
+    var offsets: List[Long] = List.empty
     controllers.values.foreach {
       case controller @ XActorController(_, _, `containerId`, _, _) =>
         controller.unBind()
+        offsets = offsets :+ controller.snapshotOffset
       case _ =>
     }
+    if (offsets.isEmpty) Option.empty else
+    Option(offsets.min)
   }
 
   implicit class ContainerDataChecker(data: ContainerData)(implicit val logging: Logging) {
