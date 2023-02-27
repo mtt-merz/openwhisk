@@ -139,8 +139,9 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
         val memory = r.action.limits.memory.megabytes.MB
 
         val createdContainer =
+          // Schedule a job to a warm container
           ContainerPool
-            .schedule(r, freePool)
+            .schedule(r.action, r.msg.user.namespace.name, freePool)
             .map(container => (container, container._2.initingState)) //warmed, warming, and warmingCold always know their state
             .orElse(
               // There was no warm/warming/warmingCold container. Try to take a prewarm container or a cold container.
@@ -510,14 +511,14 @@ object ContainerPool {
    * Returns None iff no matching container is in the idle pool.
    * Does not consider pre-warmed containers.
    *
-   * @param job the action execution request
-   * @param idles a map of idle containers, awaiting work
+   * @param action              the action to run
+   * @param invocationNamespace the namespace, that wants to run the action
+   * @param idles               a map of idle containers, awaiting work
    * @return a container if one found
    */
-  protected[containerpool] def schedule[A](job: Run, idles: Map[A, ContainerData]): Option[(A, ContainerData)] = {
-    val invocationNamespace = job.msg.user.namespace.name
-    val action = job.action
-
+  protected[containerpool] def schedule[A](action: ExecutableWhiskAction,
+                                           invocationNamespace: EntityName,
+                                           idles: Map[A, ContainerData]): Option[(A, ContainerData)] = {
     idles
       .find {
         case (_, c @ WarmedData(_, `invocationNamespace`, `action`, _, _, _)) if c.hasCapacity() => true
