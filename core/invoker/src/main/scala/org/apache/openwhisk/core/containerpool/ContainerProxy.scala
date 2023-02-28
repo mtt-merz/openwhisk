@@ -891,7 +891,7 @@ class ContainerProxy(factory: (TransactionId,
         }
     }
 
-    val userContext = UserContext(job.msg.user)
+    val context = UserContext(job.msg.user)
 
     // Adds logs to the raw activation.
     val activationWithLogs: Future[Either[ActivationLogReadingError, WhiskActivation]] = activation
@@ -932,7 +932,7 @@ class ContainerProxy(factory: (TransactionId,
                 job.msg.user.namespace.uuid,
                 CompletionMessage(tid, activation, instance)))
         }
-        storeActivation(tid, activation, job.msg.blocking, userContext)
+        storeActivation(tid, activation, job.msg.blocking, context)
       }
 
     // Disambiguate activation errors and transform the Either into a failed/successful Future respectively.

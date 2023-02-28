@@ -121,8 +121,8 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
     // their requests and send them back to the pool for rescheduling (this may happen if "docker" operations
     // fail for example, or a container has aged and was destroying itself when a new request was assigned)
     case r: Run if r.shouldBeExecuted =>
-      // Check if there is an assigned container and if it is free
-      val isContainerFree = freePool.values.exists(c => c.canRun(r))
+      // Check if there is not an assigned container or if there is one and it is free
+      val isContainerFreeOrNotSet = !XActorController.of(r).isBound || freePool.values.exists(c => c.canRun(r))
 
       // Check if the message is resent from the buffer. Only the first message on the buffer can be resent.
       val isResentFromBuffer = runBuffer.nonEmpty && runBuffer.dequeueOption.exists(_._1.msg == r.msg)
@@ -130,7 +130,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
       // Only process request, if there are no other requests waiting for free slots, or if the current request is the
       // next request to process
       // It is guaranteed, that only the first message on the buffer is resent.
-      if (isContainerFree && (runBuffer.isEmpty || isResentFromBuffer)) {
+      if (isContainerFreeOrNotSet && (runBuffer.isEmpty || isResentFromBuffer)) {
         if (isResentFromBuffer) {
           //remove from resent tracking - it may get resent again, or get processed
           resent = None
@@ -511,9 +511,9 @@ object ContainerPool {
    * Returns None iff no matching container is in the idle pool.
    * Does not consider pre-warmed containers.
    *
-   * @param action              the action to run
+   * @param action the action to run
    * @param invocationNamespace the namespace, that wants to run the action
-   * @param idles               a map of idle containers, awaiting work
+   * @param idles a map of idle containers, awaiting work
    * @return a container if one found
    */
   protected[containerpool] def schedule[A](action: ExecutableWhiskAction,
