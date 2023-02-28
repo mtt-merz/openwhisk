@@ -25,7 +25,6 @@ import akka.actor.{ActorRef, ActorRefFactory, ActorSystem, CoordinatedShutdown, 
 import akka.event.Logging.InfoLevel
 import org.apache.openwhisk.common._
 import org.apache.openwhisk.common.tracing.WhiskTracerProvider
-import org.apache.openwhisk.connector.kafka.KafkaConsumerConnector
 import org.apache.openwhisk.core.ack.{MessagingActiveAck, UserEventSender}
 import org.apache.openwhisk.core.connector._
 import org.apache.openwhisk.core.containerpool._
@@ -236,25 +235,16 @@ class InvokerReactive(
         //set trace context to continue tracing
         WhiskTracerProvider.tracer.setTraceContext(transid, msg.traceContext)
 
-        val msgWithOffset = consumer match {
-          case c: KafkaConsumerConnector =>
-            msg.addContentField("offset" -> JsNumber(c.currentOffset))
-
-          case _ => throw KafkaNotEnabled("addOffsetToActivationMessage")
-        }
-
         if (!namespaceBlacklist.isBlacklisted(msg.user)) {
           val start = transid.started(this, LoggingMarkers.INVOKER_ACTIVATION, logLevel = InfoLevel)
-          handleActivationMessage(msgWithOffset)
+          handleActivationMessage(msg)
         } else {
           // Iff the current namespace is blacklisted, an active-ack is only produced to keep the loadbalancer protocol
           // Due to the protective nature of the blacklist, a database entry is not written.
           activationFeed ! MessageFeed.Processed
 
           val activation =
-            generateFallbackActivation(
-              msgWithOffset,
-              ActivationResponse.applicationError(Messages.namespacesBlacklisted))
+            generateFallbackActivation(msg, ActivationResponse.applicationError(Messages.namespacesBlacklisted))
           ack(
             msg.transid,
             activation,

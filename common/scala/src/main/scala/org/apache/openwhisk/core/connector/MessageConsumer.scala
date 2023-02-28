@@ -29,6 +29,9 @@ import akka.pattern.pipe
 import org.apache.openwhisk.common.Logging
 import org.apache.openwhisk.common.TransactionId
 import org.apache.openwhisk.connector.kafka.KafkaConsumerConnector
+import spray.json.JsNumber
+
+import java.nio.charset.StandardCharsets
 
 trait MessageConsumer {
 
@@ -57,10 +60,9 @@ trait MessageConsumer {
 }
 
 case class KafkaNotEnabled(operation: String)
-  extends Exception(
-    s"The operation $operation needs Kafka." +
-      s"MessageProvider SPI should be set to 'org.apache.openwhisk.connector.kafka.KafkaMessagingProvider'")
-
+    extends Exception(
+      s"The operation $operation needs Kafka." +
+        s"MessageProvider SPI should be set to 'org.apache.openwhisk.connector.kafka.KafkaMessagingProvider'")
 
 object MessageFeed {
   protected sealed trait FeedState
@@ -231,7 +233,14 @@ class MessageFeed(description: String,
       outstandingMessages = outstandingMessages.tail
 
       if (logHandoff) logging.debug(this, s"processing $topic[$partition][$offset] ($occupancy/$handlerCapacity)")
-      handler(bytes)
+      handler(
+        ActivationMessage
+          .parse(new String(bytes, StandardCharsets.UTF_8))
+          .toOption
+          .map { msg: ActivationMessage =>
+            msg.addContentField("offset" -> JsNumber(offset)).serialize.getBytes(StandardCharsets.UTF_8)
+          }
+          .getOrElse(bytes))
       handlerCapacity -= 1
 
       sendOutstandingMessages()
