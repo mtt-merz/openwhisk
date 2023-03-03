@@ -11,11 +11,11 @@ import spray.json.{JsNumber, JsString}
  * @param id is the actor instance identifier
  * @param kind is the actor instance class
  */
-case class XActorController(var id: String,
-                            var kind: String,
-                            var containerId: Option[ContainerId] = Option.empty,
-                            var offset: Long = 0,
-                            var snapshotOffset: Long = 0)(implicit val logging: Logging) {
+case class JobController(var id: String,
+                         var kind: String,
+                         var containerId: Option[ContainerId] = Option.empty,
+                         var offset: Long = 0,
+                         var snapshotOffset: Long = 0)(implicit val logging: Logging) {
   private val actorString = s"${kind.capitalize}@$id"
 
   private class BindingException(cId: ContainerId)
@@ -64,16 +64,15 @@ case class XActorController(var id: String,
   }
 }
 
-object XActorController {
-  private var controllers: Map[(String, String), XActorController] = Map()
+object JobController {
+  private var controllers: Map[(String, String), JobController] = Map()
 
-  def of(r: Run)(implicit logging: Logging): XActorController = {
-    val id = r.msg.getContentField("id").asInstanceOf[JsString].value
-    val kind = r.msg.action.name.asString
-
+  def of(job: Run)(implicit logging: Logging): JobController = {
+    val id = job.msg.getContentField("id").asInstanceOf[JsString].value
+    val kind = job.msg.action.name.asString
     val key = (id, kind)
     controllers.getOrElse(key, {
-      val binding = new XActorController(id, kind)
+      val binding = new JobController(id, kind)
       controllers += (key -> binding)
       logging.info(this, s"Controller initialized for ${binding.actorString}")
 
@@ -92,7 +91,7 @@ object XActorController {
 
     var offsets: List[Long] = List.empty
     controllers.values.foreach {
-      case controller @ XActorController(_, _, `containerId`, _, _) =>
+      case controller @ JobController(_, _, `containerId`, _, _) =>
         controller.unBind()
         offsets = offsets :+ controller.snapshotOffset
       case _ =>
@@ -109,18 +108,18 @@ object XActorController {
      * (1) the related XActor is not yet bound to any container or
      * (2) the related XActor is bound to THIS container.
      *
-     * @param r is the request.
+     * @param job is the request.
      * @return true if the request can be ran, false otherwise.
      */
-    def canRun(r: Run): Boolean = {
-      val controller = of(r)
+    def canRun(job: Run): Boolean = {
+      val controller = of(job)
 
       if (controller.containerId.isEmpty || data.getContainer.isEmpty) true
       else data.getContainer.get.containerId == controller.containerId.get
     }
   }
 
-  implicit class RunChecker(r: Run)(implicit val logging: Logging) {
+  implicit class JobChecker(job: Run)(implicit val logging: Logging) {
 
     /**
      * Check if the request should be executed or not.
@@ -131,11 +130,14 @@ object XActorController {
      * @return the result of the check.
      */
     def shouldBeExecuted: Boolean = {
-      val controller = of(r)
+      val controller = of(job)
 
-      val requestOffset = r.msg.getContentField("offset").asInstanceOf[JsNumber].value
-      requestOffset > controller.offset
+      if (job.offset > controller.offset)
+        true
+      else {
+        println(s"\n\nREQUEST SKIPPED\nrequestOffset = ${job.offset}\ncontroller.offset = ${controller.offset}\n\n")
+        false
+      }
     }
   }
-
 }

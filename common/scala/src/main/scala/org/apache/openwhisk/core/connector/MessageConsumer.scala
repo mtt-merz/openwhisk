@@ -234,6 +234,7 @@ class MessageFeed(description: String,
 
       if (logHandoff) logging.debug(this, s"processing $topic[$partition][$offset] ($occupancy/$handlerCapacity)")
       handler(
+        // Try parsing bytes as an ActivationMessage instance,in order to record the message offset
         ActivationMessage
           .parse(new String(bytes, StandardCharsets.UTF_8))
           .toOption

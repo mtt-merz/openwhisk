@@ -143,9 +143,6 @@ class KafkaConsumerConnector(
     consumer.close()
   }
 
-  /** Retrieve the kafka consumer current offset. */
-  def currentOffset: Long = offset + 0
-
   /** Updates the offset of the current kafka consumer to the given one. */
   def changeOffset(offset: Long): Unit = synchronized {
     logging.info(this, s"changing consumer offset for '$topic' from ${this.offset} to $offset")
