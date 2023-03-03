@@ -238,9 +238,7 @@ class MessageFeed(description: String,
         ActivationMessage
           .parse(new String(bytes, StandardCharsets.UTF_8))
           .toOption
-          .map { msg: ActivationMessage =>
-            msg.addContentField("offset" -> JsNumber(offset)).serialize.getBytes(StandardCharsets.UTF_8)
-          }
+          .map(_.addContentField("offset" -> JsNumber(offset)).serialize.getBytes(StandardCharsets.UTF_8))
           .getOrElse(bytes))
       handlerCapacity -= 1
 
