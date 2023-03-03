@@ -195,7 +195,9 @@ case class WarmedData(override val container: Container,
 
 // Events received by the actor
 case class Start(exec: CodeExec[_], memoryLimit: ByteSize, ttl: Option[FiniteDuration] = None)
-case class Run(action: ExecutableWhiskAction, msg: ActivationMessage, retryLogDeadline: Option[Deadline] = None)
+case class Run(action: ExecutableWhiskAction, msg: ActivationMessage, retryLogDeadline: Option[Deadline] = None){
+  var offset: Long = msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
+}
 case object Remove
 case class HealthPingEnabled(enabled: Boolean)
 
@@ -825,7 +827,7 @@ class ContainerProxy(factory: (TransactionId,
           "deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)
 
         // bind XActor instance to this container; if already bound assure it is the right one
-        XActorController.of(job).bind(container)
+        JobController.of(job).bind(container)
 
         container
           .run(
@@ -837,7 +839,7 @@ class ContainerProxy(factory: (TransactionId,
           .map {
             case (runInterval, response) =>
               println(s"\n$response\n")
-              XActorController.of(job).update(job)
+              JobController.of(job).update(job)
 
               val initRunInterval = initInterval
                 .map(i => Interval(runInterval.start.minusMillis(i.duration.toMillis), runInterval.end))
