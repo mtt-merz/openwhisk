@@ -37,6 +37,10 @@ import scala.concurrent.{blocking, ExecutionContext, Future}
 import scala.util.Failure
 
 case class KafkaConsumerConfig(sessionTimeoutMs: Long)
+case class KafkaNotEnabled(operation: String)
+    extends Exception(
+      s"The operation $operation needs Kafka." +
+        s"MessageProvider SPI should be set to 'org.apache.openwhisk.connector.kafka.KafkaMessagingProvider'")
 
 class KafkaConsumerConnector(
   kafkahost: String,

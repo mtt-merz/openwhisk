@@ -28,7 +28,7 @@ import akka.actor.FSM
 import akka.pattern.pipe
 import org.apache.openwhisk.common.Logging
 import org.apache.openwhisk.common.TransactionId
-import org.apache.openwhisk.connector.kafka.KafkaConsumerConnector
+import org.apache.openwhisk.connector.kafka.{KafkaConsumerConnector, KafkaNotEnabled}
 import spray.json.JsNumber
 
 import java.nio.charset.StandardCharsets
@@ -58,11 +58,6 @@ trait MessageConsumer {
   def close(): Unit
 
 }
-
-case class KafkaNotEnabled(operation: String)
-    extends Exception(
-      s"The operation $operation needs Kafka." +
-        s"MessageProvider SPI should be set to 'org.apache.openwhisk.connector.kafka.KafkaMessagingProvider'")
 
 object MessageFeed {
   protected sealed trait FeedState
