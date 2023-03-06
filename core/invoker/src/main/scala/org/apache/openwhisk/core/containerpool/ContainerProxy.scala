@@ -826,8 +826,8 @@ class ContainerProxy(factory: (TransactionId,
           // but potentially under-estimates actual deadline
           "deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)
 
-        // bind XActor instance to this container; if already bound assure it is the right one
-        JobController.of(job).bind(container)
+        // bind controller instance to this container; if already bound assure it is the right one
+        JobController.onExecutionStarted(job, container)
 
         container
           .run(
@@ -839,7 +839,7 @@ class ContainerProxy(factory: (TransactionId,
           .map {
             case (runInterval, response) =>
               println(s"\n$response\n")
-              JobController.of(job).update(job)
+              JobController.onExecutionFinished(job)
 
               val initRunInterval = initInterval
                 .map(i => Interval(runInterval.start.minusMillis(i.duration.toMillis), runInterval.end))

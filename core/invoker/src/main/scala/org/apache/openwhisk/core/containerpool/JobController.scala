@@ -14,38 +14,51 @@ import spray.json.{JsNumber, JsString}
 case class JobController(var id: String,
                          var kind: String,
                          var containerId: Option[ContainerId] = Option.empty,
-                         var offset: Long = 0,
-                         var snapshotOffset: Long = 0)(implicit val logging: Logging) {
-  private val actorString = s"${kind.capitalize}@$id"
-
-  private class BindingException(cId: ContainerId)
-      extends Exception(s"$actorString operations should be ran on ${containerId.get}, not on $cId") {}
-
-  private class UnBindingException() extends Exception(s"$actorString is not bound") {}
+                         private var offset: Long = -1,
+                         private var snapshotOffset: Long = 0,
+                         private var runningOffset: Option[Long] = Option.empty)(implicit val logging: Logging) {
 
   /**
-   * Check if the XActor instance is bounded to a ContainerId
+   * Check if the controller is bound to a ContainerId
    *
-   * @return the result of the checking operation
+   * @return true if it is bound, false otherwise.
    */
   def isBound: Boolean = containerId.isDefined
 
   /**
-   * Bind a container to the XActor, if not currently bound.
-   * If already bound, check that the container is the correct one.
+   * Update the  offset and eventually the snapshot offset
+   */
+  private def onExecutionFinished(implicit job: Run): Unit = {
+    assert(runningOffset.isDefined && runningOffset.get == job.offset)
+    runningOffset = Option.empty
+    offset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
+
+    println(s"\nRequest ${job.offset} FINISHED running\n")
+  }
+
+  /**
+   * Bind a container to the controller, if not currently bound; if already bound,
+   * check that the container is the correct one.
    *
    * @param container is the container to check
    * @throws BindingException if there is a bound container but it is not the received one
    */
-  def bind(container: Container): Unit = {
+  private def onExecutionStarted(container: Container)(implicit job: Run): Unit = {
+    assert(runningOffset.isEmpty)
+    runningOffset = Option(job.offset)
+
+    println(s"\nRequest ${job.offset} STARTED running\n")
+
     val cId = container.containerId
     if (containerId.isEmpty) containerId = Option(cId)
     else if (containerId.get != cId)
       throw new BindingException(cId)
   }
 
+  private val printActor = s"${kind.capitalize}@$id"
+
   /**
-   * Reset the XActor binding.
+   * Reset the controller binding.
    *
    * @throws UnBindingException if the XActor is already unbound
    */
@@ -53,19 +66,18 @@ case class JobController(var id: String,
     if (!isBound) throw new UnBindingException()
     containerId = Option.empty
     offset = snapshotOffset
-    logging.info(this, s"Controller unbound for $actorString")
+    logging.info(this, s"Controller unbound for $printActor")
   }
 
-  /**
-   * Update the  offset and eventually the snapshot offset
-   */
-  def update(r: Run): Unit = {
-    offset = r.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
-  }
+  private class BindingException(cId: ContainerId)
+      extends Exception(s"$printActor operations should be ran on ${containerId.get}, not on $cId") {}
+
+  private class UnBindingException() extends Exception(s"$printActor is not bound") {}
 }
 
 object JobController {
   private var controllers: Map[(String, String), JobController] = Map()
+  private var receivedOffset: Long = -1
 
   def of(job: Run)(implicit logging: Logging): JobController = {
     val id = job.msg.getContentField("id").asInstanceOf[JsString].value
@@ -74,11 +86,23 @@ object JobController {
     controllers.getOrElse(key, {
       val binding = new JobController(id, kind)
       controllers += (key -> binding)
-      logging.info(this, s"Controller initialized for ${binding.actorString}")
+      logging.info(this, s"Controller initialized for ${binding.printActor}")
 
       binding
     })
   }
+
+  def onExecutionStarted(job: Run, container: Container)(implicit logging: Logging): Unit =
+    JobController.of(job).onExecutionStarted(container)(job)
+
+  def onExecutionFailed(job: Run): Unit = {
+    assert(receivedOffset == job.offset)
+    receivedOffset -= 1
+  }
+
+  def onExecutionFinished(job: Run)(implicit logging: Logging): Unit =
+    JobController.of(job).onExecutionFinished(job)
+
 
   /**
    * Un-bind the controllers bound to the given container and calculate the offset to restore.
@@ -91,13 +115,57 @@ object JobController {
 
     var offsets: List[Long] = List.empty
     controllers.values.foreach {
-      case controller @ JobController(_, _, `containerId`, _, _) =>
+      case controller @ JobController(_, _, `containerId`, _, _, _) =>
         controller.unBind()
         offsets = offsets :+ controller.snapshotOffset
       case _ =>
     }
-    if (offsets.isEmpty) Option.empty else
-    Option(offsets.min)
+    if (offsets.isEmpty) Option.empty
+    else
+      Option(offsets.min)
+  }
+
+  /**
+   * Check if the request should be executed or not.
+   * This is true if
+   * (1) the request has never been executed or
+   * (2) the request should be re-executed to restore the container state.
+   *
+   * @param job is the Run instance to check
+   * @return true if it should be executed, false otherwise.
+   */
+  def shouldExecute(job: Run)(implicit logging: Logging): Boolean = {
+    val controller = of(job)
+
+    // Offset of the currently running request, if any, or of the last executed request
+    val currentOffset = controller.runningOffset.getOrElse(controller.offset)
+    if (job.offset > currentOffset) {
+      print(
+        s"\nOK: Currently running/last executed request $currentOffset is BEFORE the received request ${job.offset}\n")
+      true
+    } else {
+      print(
+        s"\nREQUEST SKIPPED: Currently running/last executed request $currentOffset is EQUAL/AFTER the received request ${job.offset}\n")
+      false
+    }
+  }
+
+  /**
+   * Ensure the new request has been received in the correct order (it is not guaranteed by OpenWhisk).
+   * If the order is not correct, the request should be enqueued in the buffer.
+   *
+   * @param job is the Run instance to check.
+   * @return true if the order is correct, false otherwise.
+   */
+  def checkOrder(job: Run): Boolean = {
+    if (job.offset == receivedOffset + 1) {
+      println(s"The order is correct: job.offset (${job.offset}) == receivedOffset ($receivedOffset) + 1")
+      receivedOffset += 1
+      true
+    } else {
+      println(s"The order is NOT correct: job.offset (${job.offset}) != receivedOffset ($receivedOffset) + 1")
+      false
+    }
   }
 
   implicit class ContainerDataChecker(data: ContainerData)(implicit val logging: Logging) {
@@ -119,25 +187,16 @@ object JobController {
     }
   }
 
-  implicit class JobChecker(job: Run)(implicit val logging: Logging) {
-
-    /**
-     * Check if the request should be executed or not.
-     * This is true if
-     * (1) the request has never been executed or
-     * (2) the request should be re-executed to restore the container state.
-     *
-     * @return the result of the check.
-     */
-    def shouldBeExecuted: Boolean = {
-      val controller = of(job)
-
-      if (job.offset > controller.offset)
-        true
-      else {
-        println(s"\n\nREQUEST SKIPPED\nrequestOffset = ${job.offset}\ncontroller.offset = ${controller.offset}\n\n")
+  implicit class JobBufferEnhancer(buffer: JobBuffer)(implicit val logging: Logging) {
+    def hasNothingToExecute: Boolean = {
+      if (buffer.map(_.offset).contains(receivedOffset)) {
+        println(s"Buffer contains $receivedOffset, so it has SOMETHING ELSE to execute before\n")
         false
+      } else {
+        println(s"Buffer does NOT contain $receivedOffset, so it has NOTHING ELSE to execute before\n")
+        true
       }
+
     }
   }
 }

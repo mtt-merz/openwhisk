@@ -120,14 +120,18 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
     // Run messages are received either via the feed or from child containers which cannot process
     // their requests and send them back to the pool for rescheduling (this may happen if "docker" operations
     // fail for example, or a container has aged and was destroying itself when a new request was assigned)
-    case r: Run => //if r.shouldBeExecuted =>
+    case r: Run if JobController.shouldExecute(r) =>
       // Check if the message is resent from the buffer. Only the first message on the buffer can be resent.
       val isResentFromBuffer = runBuffer.nonEmpty && runBuffer.dequeueOption.exists(_._1.msg == r.msg)
+
+      println(s"\nRECEIVED #${r.offset}\t RESENT FROM BUFFER = $isResentFromBuffer\nBuffer = $runBuffer\n")
 
       // Only process request, if there are no other requests waiting for free slots, or if the current request is the
       // next request to process
       // It is guaranteed, that only the first message on the buffer is resent.
-      if (runBuffer.isEmpty || isResentFromBuffer) {
+      if (JobController.checkOrder(r) && (runBuffer.hasNothingToExecute || isResentFromBuffer)) {
+        println(s"RUNNING #${r.offset}")
+
         if (isResentFromBuffer) {
           //remove from resent tracking - it may get resent again, or get processed
           resent = None
@@ -139,13 +143,18 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
         val warmContainer = ContainerPool.schedule(r, freePool)
         if (warmContainer.isEmpty && JobController.of(r).isBound) {
           // Controller is bound to a container but it is busy
-          logging.info(this, s"Designated container is busy")
+          println(s"\nDesignated container ${JobController.of(r).containerId.get} is busy\n")
+
+          JobController.onExecutionFailed(r)
+
           if (isResentFromBuffer) {
-            if (runBuffer.size > 1) {
+            if (runBuffer.isReorderingUseful) {
+              // Run another request on the buffer
               runBuffer = runBuffer.reorder
               processBufferOrFeed()
             }
           } else
+            // Add request to buffer, since not yet present
             runBuffer = runBuffer.enqueue(r)
         } else {
           val createdContainer = warmContainer
@@ -219,6 +228,9 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
               // this can also happen if createContainer fails to start a new container, or
               // if a job is rescheduled but the container it was allocated to has not yet destroyed itself
               // (and a new container would over commit the pool)
+
+              JobController.onExecutionFailed(r)
+
               val isErrorLogged = r.retryLogDeadline.map(_.isOverdue).getOrElse(true)
               val retryLogDeadline = if (isErrorLogged) {
                 logging.warn(
@@ -238,14 +250,16 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
               if (!isResentFromBuffer) {
                 // Add this request to the buffer, as it is not there yet.
                 runBuffer = runBuffer.enqueue(Run(r.action, r.msg, retryLogDeadline))
+                println(s"\n\nADD TO BUFFER REQUEST ${r.offset}\n\n")
               }
-            //buffered items will be processed via processBufferOrFeed()
+              //buffered items will be processed via processBufferOrFeed()
           }
         }
       } else {
         // There are currently actions waiting to be executed before this action gets executed.
         // These waiting actions were not able to free up enough memory.
         runBuffer = runBuffer.enqueue(r)
+        println(s"ENQUEUE #${r.offset}\n")
       }
 
     // Container is free to take more work
@@ -330,6 +344,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
 
   /** Resend next item in the buffer, or trigger next item in the feed, if no items in the buffer. */
   def processBufferOrFeed() = {
+    print(s"CALLED PROCESS_BUFFER_OR_FEED, WHIT RESENT = $resent\n")
     // If buffer has more items, and head has not already been resent, send next one, otherwise get next from feed.
     runBuffer.dequeueOption match {
       case Some((run, _)) => //run the first from buffer
