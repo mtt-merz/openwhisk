@@ -120,7 +120,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
     // Run messages are received either via the feed or from child containers which cannot process
     // their requests and send them back to the pool for rescheduling (this may happen if "docker" operations
     // fail for example, or a container has aged and was destroying itself when a new request was assigned)
-    case r: Run if JobController.shouldExecute(r) =>
+    case r: Run if JobController.checkIfAlreadyExecuted(r) =>
       // Check if the message is resent from the buffer. Only the first message on the buffer can be resent.
       val isResentFromBuffer = runBuffer.nonEmpty && runBuffer.dequeueOption.exists(_._1.msg == r.msg)
 
@@ -130,7 +130,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
       // next request to process
       // It is guaranteed, that only the first message on the buffer is resent.
       if (JobController.checkOrder(r) && (runBuffer.hasNothingToExecute || isResentFromBuffer)) {
-        println(s"RUNNING #${r.offset}")
+        println(s"RUNNING #${r.offset}\n")
 
         if (isResentFromBuffer) {
           //remove from resent tracking - it may get resent again, or get processed
@@ -143,7 +143,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
         val warmContainer = ContainerPool.schedule(r, freePool)
         if (warmContainer.isEmpty && JobController.of(r).isBound) {
           // Controller is bound to a container but it is busy
-          println(s"\nDesignated container ${JobController.of(r).containerId.get} is busy\n")
+          logging.info(this, s"Designated container ${JobController.of(r).containerId.get} is busy")
 
           JobController.onExecutionFailed(r)
 
@@ -252,7 +252,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
                 runBuffer = runBuffer.enqueue(Run(r.action, r.msg, retryLogDeadline))
                 println(s"\n\nADD TO BUFFER REQUEST ${r.offset}\n\n")
               }
-              //buffered items will be processed via processBufferOrFeed()
+            //buffered items will be processed via processBufferOrFeed()
           }
         }
       } else {
@@ -293,21 +293,36 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
 
     // Container got removed
     case ContainerRemoved(replacePrewarm) =>
+      println(s"\nCONTAINER REMOVED\n")
+      runBuffer = JobBuffer.empty
+
       // if container was in free pool, it may have been processing (but under capacity),
       // so there is capacity to accept another job request
       freePool.get(sender()).foreach { c =>
-        JobController
-          .removeContainer(c.getContainer.get)
-          .foreach(offset => feed ! MessageFeed.ChangeOffset(offset))
+        if (c.getContainer.isDefined)
+          JobController
+            .removeContainer(c.getContainer.get)
+            .foreach(offset => {
+              feed ! MessageFeed.ChangeOffset(offset)
+              println(s"\nCHANGING CONSUMER OFFSET - freePool\n")
+            })
         freePool = freePool - sender()
       }
 
       // container was busy (busy indicates at full capacity), so there is capacity to accept another job request
       busyPool.get(sender()).foreach { c =>
-        JobController
-          .removeContainer(c.getContainer.get)
-          .foreach(offset => feed ! MessageFeed.ChangeOffset(offset))
-        busyPool = busyPool - sender()
+        {
+          println(s"\n${c.getContainer}\n")
+          if (c.getContainer.isDefined)
+            JobController
+              .removeContainer(c.getContainer.get)
+              .foreach(offset => {
+                feed ! MessageFeed.ChangeOffset(offset)
+                println(s"\nCHANGING CONSUMER OFFSET - busyPool\n")
+
+              })
+          busyPool = busyPool - sender()
+        }
       }
       processBufferOrFeed()
 
@@ -344,20 +359,19 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
 
   /** Resend next item in the buffer, or trigger next item in the feed, if no items in the buffer. */
   def processBufferOrFeed() = {
-    print(s"CALLED PROCESS_BUFFER_OR_FEED, WHIT RESENT = $resent\n")
     // If buffer has more items, and head has not already been resent, send next one, otherwise get next from feed.
     runBuffer.dequeueOption match {
-      case Some((run, _)) => //run the first from buffer
+      case Some((run, _)) if run.offset == JobController.offset + 1 => //run the first from buffer
         implicit val tid = run.msg.transid
         //avoid sending dupes
         if (resent.isEmpty) {
-          logging.info(this, s"re-processing from buffer (${runBuffer.length} items in buffer)")
+          logging.info(this, s"re-processing from buffer $runBuffer")
           resent = Some(run)
           self ! run
         } else {
           //do not resend the buffer head multiple times (may reach this point from multiple messages, before the buffer head is re-processed)
         }
-      case None => //feed me!
+      case _ => //feed me!
         feed ! MessageFeed.Processed
     }
   }

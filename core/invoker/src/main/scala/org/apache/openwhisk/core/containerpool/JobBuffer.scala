@@ -68,11 +68,14 @@ class JobBuffer(private val content: ListMap[Option[ContainerId], SortedSet[Run]
   def size: Int = content.values.map(_.size).sum
 
   override def toString: String = {
-    var out = ""
+    var out = List.empty[String]
     for (entry <- content)
-      out += s"${entry._1} -> [${entry._2.map(_.offset).mkString(", ")}]\n"
+      out = out :+ s"${entry._1.map {
+        case c: ContainerId => c.asString takeRight 5
+        case _              => ""
+      }} -> [${entry._2.map(_.offset).mkString(", ")}]"
 
-    out
+    s"{${out.mkString(", ")}}"
   }
 }
 

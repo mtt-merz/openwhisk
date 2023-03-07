@@ -840,6 +840,7 @@ class ContainerProxy(factory: (TransactionId,
             case (runInterval, response) =>
               println(s"\n$response\n")
               JobController.onExecutionFinished(job)
+              if (job.offset == 10) self ! Remove
 
               val initRunInterval = initInterval
                 .map(i => Interval(runInterval.start.minusMillis(i.duration.toMillis), runInterval.end))

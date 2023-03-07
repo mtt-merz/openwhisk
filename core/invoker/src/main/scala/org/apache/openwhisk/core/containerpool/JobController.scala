@@ -11,12 +11,15 @@ import spray.json.{JsNumber, JsString}
  * @param id is the actor instance identifier
  * @param kind is the actor instance class
  */
-case class JobController(var id: String,
-                         var kind: String,
-                         var containerId: Option[ContainerId] = Option.empty,
-                         private var offset: Long = -1,
-                         private var snapshotOffset: Long = 0,
-                         private var runningOffset: Option[Long] = Option.empty)(implicit val logging: Logging) {
+case class JobController(private var id: String,
+                         private var kind: String,
+                         var containerId: Option[ContainerId] = Option.empty)(implicit val logging: Logging) {
+
+  private var runningOffset: Option[Long] = Option.empty
+  private var lastExecutedOffset: Long = -1
+  private var snapshotOffset: Long = 0
+
+  private var isRestoring: Boolean = false
 
   /**
    * Check if the controller is bound to a ContainerId
@@ -31,9 +34,7 @@ case class JobController(var id: String,
   private def onExecutionFinished(implicit job: Run): Unit = {
     assert(runningOffset.isDefined && runningOffset.get == job.offset)
     runningOffset = Option.empty
-    offset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
-
-    println(s"\nRequest ${job.offset} FINISHED running\n")
+    lastExecutedOffset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
   }
 
   /**
@@ -65,8 +66,9 @@ case class JobController(var id: String,
   private def unBind(): Unit = {
     if (!isBound) throw new UnBindingException()
     containerId = Option.empty
-    offset = snapshotOffset
-    logging.info(this, s"Controller unbound for $printActor")
+    lastExecutedOffset = snapshotOffset
+    isRestoring = true
+    println(s"\nController unbound for $printActor\n")
   }
 
   private class BindingException(cId: ContainerId)
@@ -77,7 +79,8 @@ case class JobController(var id: String,
 
 object JobController {
   private var controllers: Map[(String, String), JobController] = Map()
-  private var receivedOffset: Long = -1
+
+  var offset: Long = -1
 
   def of(job: Run)(implicit logging: Logging): JobController = {
     val id = job.msg.getContentField("id").asInstanceOf[JsString].value
@@ -96,13 +99,12 @@ object JobController {
     JobController.of(job).onExecutionStarted(container)(job)
 
   def onExecutionFailed(job: Run): Unit = {
-    assert(receivedOffset == job.offset)
-    receivedOffset -= 1
+    assert(offset == job.offset)
+    offset -= 1
   }
 
   def onExecutionFinished(job: Run)(implicit logging: Logging): Unit =
     JobController.of(job).onExecutionFinished(job)
-
 
   /**
    * Un-bind the controllers bound to the given container and calculate the offset to restore.
@@ -111,18 +113,20 @@ object JobController {
    * @return the offset to restore.
    */
   def removeContainer(container: Container): Option[Long] = {
-    val containerId = container.containerId
-
+    val containerId = Option(container.containerId)
+    println("REMOVE CONTAINER METHOD")
     var offsets: List[Long] = List.empty
     controllers.values.foreach {
-      case controller @ JobController(_, _, `containerId`, _, _, _) =>
+      case controller @ JobController(_, _, `containerId`) =>
         controller.unBind()
         offsets = offsets :+ controller.snapshotOffset
       case _ =>
     }
     if (offsets.isEmpty) Option.empty
-    else
-      Option(offsets.min)
+    else {
+      offset = offsets.min - 1
+      Option(offset + 1)
+    }
   }
 
   /**
@@ -134,18 +138,20 @@ object JobController {
    * @param job is the Run instance to check
    * @return true if it should be executed, false otherwise.
    */
-  def shouldExecute(job: Run)(implicit logging: Logging): Boolean = {
+  def checkIfAlreadyExecuted(job: Run)(implicit logging: Logging): Boolean = {
+    if (job.offset == offset + 1) offset += 1
+
     val controller = of(job)
 
     // Offset of the currently running request, if any, or of the last executed request
-    val currentOffset = controller.runningOffset.getOrElse(controller.offset)
-    if (job.offset > currentOffset) {
+//    val currentOffset = controller.runningOffset.getOrElse(controller.lastExecutedOffset)
+    if (job.offset >= offset) {
       print(
-        s"\nOK: Currently running/last executed request $currentOffset is BEFORE the received request ${job.offset}\n")
+        s"\nOK: Currently running/last executed request $offset is BEFORE the received request ${job.offset}\n")
       true
     } else {
       print(
-        s"\nREQUEST SKIPPED: Currently running/last executed request $currentOffset is EQUAL/AFTER the received request ${job.offset}\n")
+        s"\nREQUEST SKIPPED: Received request ${job.offset} is BEFORE LAST request $offset\n")
       false
     }
   }
@@ -154,16 +160,18 @@ object JobController {
    * Ensure the new request has been received in the correct order (it is not guaranteed by OpenWhisk).
    * If the order is not correct, the request should be enqueued in the buffer.
    *
+   * While the requests are processed in order till the InvokerReactive level, they arrives to the ContainerPool
+   * in a different order. It depends on the time needed by each request to fetch the action code from the DB.
+   *
    * @param job is the Run instance to check.
    * @return true if the order is correct, false otherwise.
    */
   def checkOrder(job: Run): Boolean = {
-    if (job.offset == receivedOffset + 1) {
-      println(s"The order is correct: job.offset (${job.offset}) == receivedOffset ($receivedOffset) + 1")
-      receivedOffset += 1
+    if (job.offset == offset) {
+      println(s"The order is correct: job.offset (${job.offset}) == receivedOffset ($offset)")
       true
     } else {
-      println(s"The order is NOT correct: job.offset (${job.offset}) != receivedOffset ($receivedOffset) + 1")
+      println(s"The order is NOT correct: job.offset (${job.offset}) != receivedOffset ($offset)")
       false
     }
   }
@@ -189,11 +197,11 @@ object JobController {
 
   implicit class JobBufferEnhancer(buffer: JobBuffer)(implicit val logging: Logging) {
     def hasNothingToExecute: Boolean = {
-      if (buffer.map(_.offset).contains(receivedOffset)) {
-        println(s"Buffer contains $receivedOffset, so it has SOMETHING ELSE to execute before\n")
+      if (buffer.map(_.offset).contains(offset)) {
+        println(s"Buffer contains $offset, so it has SOMETHING ELSE to execute before")
         false
       } else {
-        println(s"Buffer does NOT contain $receivedOffset, so it has NOTHING ELSE to execute before\n")
+        println(s"Buffer does NOT contain $offset, so it has NOTHING ELSE to execute before")
         true
       }
 

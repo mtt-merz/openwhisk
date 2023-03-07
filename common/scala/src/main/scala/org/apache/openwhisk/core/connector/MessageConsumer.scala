@@ -268,7 +268,10 @@ class MessageFeed(description: String,
 
   private def changeConsumerOffset(offset: Long): Unit =
     consumer match {
-      case consumer: KafkaConsumerConnector => consumer.changeOffset(offset)
+      case consumer: KafkaConsumerConnector =>
+        consumer.changeOffset(offset)
+        outstandingMessages = immutable.Queue.empty[(String, Int, Long, Array[Byte])]
+
       case _ =>
         throw KafkaNotEnabled("changeConsumerOffset")
     }

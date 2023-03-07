@@ -27,10 +27,11 @@ import pureconfig.generic.auto._
 import org.apache.openwhisk.common.{Logging, LoggingMarkers, MetricEmitter, Scheduler}
 import org.apache.openwhisk.connector.kafka.KafkaConfiguration._
 import org.apache.openwhisk.core.ConfigKeys
-import org.apache.openwhisk.core.connector.MessageConsumer
+import org.apache.openwhisk.core.connector.{ActivationMessage, MessageConsumer}
 import org.apache.openwhisk.utils.Exceptions
 import org.apache.openwhisk.utils.TimeHelpers._
 
+import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 import scala.concurrent.{blocking, ExecutionContext, Future}
@@ -92,6 +93,15 @@ class KafkaConsumerConnector(
       response.map { r =>
         // record the time between producing the message and reading it
         MetricEmitter.emitHistogramMetric(delayMetric, (now - r.timestamp).max(0))
+
+        val msg = ActivationMessage
+          .parse(new String(r.value, StandardCharsets.UTF_8))
+          .toOption
+          .map(msg => s"$msg")
+          .getOrElse("")
+        if (msg.nonEmpty)
+          println(s"\nPeeked ${r.offset}\t msg = $msg\n")
+
         (r.topic, r.partition, r.offset, r.value)
       }
     } catch {
@@ -149,7 +159,7 @@ class KafkaConsumerConnector(
 
   /** Updates the offset of the current kafka consumer to the given one. */
   def changeOffset(offset: Long): Unit = synchronized {
-    logging.info(this, s"changing consumer offset for '$topic' from ${this.offset} to $offset")
+    println(s"\nCHANGING CONSUMER OFFSET for '$topic' from ${this.offset} to $offset\n")
     val partition = new TopicPartition(topic, 0)
     consumer.seek(partition, offset)
   }
