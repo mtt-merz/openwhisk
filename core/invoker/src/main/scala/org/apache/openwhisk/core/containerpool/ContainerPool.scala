@@ -115,6 +115,11 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
   }
 
   def receive: Receive = {
+    // Request has already been executed and state is not been restoring, process next request
+    case r: Run if !JobController.checkIfAlreadyExecuted(r) =>
+      println("Request skipped, process buffer or feed")
+      processBufferOrFeed()
+
     // A job to run on a container
     //
     // Run messages are received either via the feed or from child containers which cannot process

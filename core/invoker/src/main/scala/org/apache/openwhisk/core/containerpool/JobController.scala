@@ -66,7 +66,7 @@ case class JobController(private var id: String,
   private def unBind(): Unit = {
     if (!isBound) throw new UnBindingException()
     containerId = Option.empty
-    lastExecutedOffset = snapshotOffset
+    lastExecutedOffset = snapshotOffset - 1
     isRestoring = true
     println(s"\nController unbound for $printActor\n")
   }
@@ -139,19 +139,20 @@ object JobController {
    * @return true if it should be executed, false otherwise.
    */
   def checkIfAlreadyExecuted(job: Run)(implicit logging: Logging): Boolean = {
+    // Update general offset
     if (job.offset == offset + 1) offset += 1
 
     val controller = of(job)
 
     // Offset of the currently running request, if any, or of the last executed request
-//    val currentOffset = controller.runningOffset.getOrElse(controller.lastExecutedOffset)
-    if (job.offset >= offset) {
+    val currentOffset = controller.runningOffset.getOrElse(controller.lastExecutedOffset)
+    if (job.offset > currentOffset) {
       print(
-        s"\nOK: Currently running/last executed request $offset is BEFORE the received request ${job.offset}\n")
+        s"\nOK: Currently running/last executed request $currentOffset is BEFORE the received request ${job.offset}\n")
       true
     } else {
       print(
-        s"\nREQUEST SKIPPED: Received request ${job.offset} is BEFORE LAST request $offset\n")
+        s"\nREQUEST SKIPPED: Currently running/last executed request $currentOffset is EQUAL/AFTER the received request ${job.offset}\n")
       false
     }
   }
