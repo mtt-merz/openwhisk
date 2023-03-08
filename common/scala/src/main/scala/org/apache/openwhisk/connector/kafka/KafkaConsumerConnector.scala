@@ -159,7 +159,7 @@ class KafkaConsumerConnector(
 
   /** Updates the offset of the current kafka consumer to the given one. */
   def changeOffset(offset: Long): Unit = synchronized {
-    println(s"\nCHANGING CONSUMER OFFSET for '$topic' from ${this.offset} to $offset\n")
+    logging.info(this, s"Consumer offset for '$topic' changed from ${this.offset} to $offset")
     val partition = new TopicPartition(topic, 0)
     consumer.seek(partition, offset)
   }

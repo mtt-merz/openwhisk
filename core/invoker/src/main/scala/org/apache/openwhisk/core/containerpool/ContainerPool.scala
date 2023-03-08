@@ -20,7 +20,7 @@ package org.apache.openwhisk.core.containerpool
 import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
 import org.apache.openwhisk.common.{Logging, LoggingMarkers, MetricEmitter, TransactionId}
 import org.apache.openwhisk.core.connector.MessageFeed
-import org.apache.openwhisk.core.containerpool.JobController._
+import org.apache.openwhisk.core.containerpool.RunController._
 import org.apache.openwhisk.core.entity.ExecManifest.ReactivePrewarmingConfig
 import org.apache.openwhisk.core.entity._
 import org.apache.openwhisk.core.entity.size._
@@ -72,7 +72,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
   // If all memory slots are occupied and if there is currently no container to be removed, than the actions will be
   // buffered here to keep order of computation.
   // Otherwise actions with small memory-limits could block actions with large memory limits.
-  var runBuffer = JobBuffer.empty
+  var runBuffer = RunBuffer.empty
   // Track the resent buffer head - so that we don't resend buffer head multiple times
   var resent: Option[Run] = None
   val logMessageInterval = 10.seconds
@@ -120,17 +120,17 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
     // Run messages are received either via the feed or from child containers which cannot process
     // their requests and send them back to the pool for rescheduling (this may happen if "docker" operations
     // fail for example, or a container has aged and was destroying itself when a new request was assigned)
-    case r: Run if JobController.checkIfAlreadyExecuted(r) =>
+    case r: Run if r.shouldBeExecuted =>
+      implicit val transactionId: TransactionId = r.msg.transid
+
       // Check if the message is resent from the buffer. Only the first message on the buffer can be resent.
       val isResentFromBuffer = runBuffer.nonEmpty && runBuffer.dequeueOption.exists(_._1.msg == r.msg)
-
-      println(s"\nRECEIVED #${r.offset}\t RESENT FROM BUFFER = $isResentFromBuffer\nBuffer = $runBuffer\n")
 
       // Only process request, if there are no other requests waiting for free slots, or if the current request is the
       // next request to process
       // It is guaranteed, that only the first message on the buffer is resent.
-      if (JobController.checkOrder(r) && (runBuffer.hasNothingToExecute || isResentFromBuffer)) {
-        println(s"RUNNING #${r.offset}\n")
+      if (r.canBeExecutedNow) {
+        logging.info(this, s"Running request #${r.offset}\n")
 
         if (isResentFromBuffer) {
           //remove from resent tracking - it may get resent again, or get processed
@@ -141,11 +141,11 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
 
         // Schedule a job to a warm container
         val warmContainer = ContainerPool.schedule(r, freePool)
-        if (warmContainer.isEmpty && JobController.of(r).isBound) {
+        if (warmContainer.isEmpty && RunController.of(r).isBound) {
           // Controller is bound to a container but it is busy
-          logging.info(this, s"Designated container ${JobController.of(r).containerId.get} is busy")
+          logging.info(this, s"Designated container ${RunController.of(r).containerId.get} is busy")
 
-          JobController.onExecutionFailed(r)
+          RunController.onExecutionFailed(r)
 
           if (isResentFromBuffer) {
             if (runBuffer.isReorderingUseful) {
@@ -229,7 +229,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
               // if a job is rescheduled but the container it was allocated to has not yet destroyed itself
               // (and a new container would over commit the pool)
 
-              JobController.onExecutionFailed(r)
+              RunController.onExecutionFailed(r)
 
               val isErrorLogged = r.retryLogDeadline.map(_.isOverdue).getOrElse(true)
               val retryLogDeadline = if (isErrorLogged) {
@@ -241,7 +241,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
                     s"maxContainersMemory ${poolConfig.userMemory.toMB} MB, " +
                     s"userNamespace: ${r.msg.user.namespace.name}, action: ${r.action}, " +
                     s"needed memory: ${r.action.limits.memory.megabytes} MB, " +
-                    s"waiting messages: ${runBuffer.size}")(r.msg.transid)
+                    s"waiting messages: ${runBuffer.size}")
                 MetricEmitter.emitCounterMetric(LoggingMarkers.CONTAINER_POOL_RESCHEDULED_ACTIVATION)
                 Some(logMessageInterval.fromNow)
               } else {
@@ -250,7 +250,6 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
               if (!isResentFromBuffer) {
                 // Add this request to the buffer, as it is not there yet.
                 runBuffer = runBuffer.enqueue(Run(r.action, r.msg, retryLogDeadline))
-                println(s"\n\nADD TO BUFFER REQUEST ${r.offset}\n\n")
               }
             //buffered items will be processed via processBufferOrFeed()
           }
@@ -259,12 +258,12 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
         // There are currently actions waiting to be executed before this action gets executed.
         // These waiting actions were not able to free up enough memory.
         runBuffer = runBuffer.enqueue(r)
-        println(s"ENQUEUE #${r.offset}\n")
+        processBufferOrFeed()
       }
 
     // Request has already been executed and state is not been restoring, process next request
-    case r: Run  =>
-      println("Request skipped, process buffer or feed")
+    case r: Run =>
+      logging.info(this, s"Request #${r.offset} SKIPPED, process buffer or feed")(r.msg.transid)
       processBufferOrFeed()
 
     // Container is free to take more work
@@ -299,13 +298,12 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
     // Container got removed
     case ContainerRemoved(replacePrewarm) =>
       println(s"\nCONTAINER REMOVED\n")
-      runBuffer = JobBuffer.empty
 
       // if container was in free pool, it may have been processing (but under capacity),
       // so there is capacity to accept another job request
       freePool.get(sender()).foreach { c =>
         if (c.getContainer.isDefined)
-          JobController
+          RunController
             .removeContainer(c.getContainer.get)
             .foreach(offset => {
               feed ! MessageFeed.ChangeOffset(offset)
@@ -316,9 +314,8 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
       // container was busy (busy indicates at full capacity), so there is capacity to accept another job request
       busyPool.get(sender()).foreach { c =>
         {
-          println(s"\n${c.getContainer}\n")
           if (c.getContainer.isDefined)
-            JobController
+            RunController
               .removeContainer(c.getContainer.get)
               .foreach(offset => {
                 feed ! MessageFeed.ChangeOffset(offset)
@@ -363,7 +360,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
   def processBufferOrFeed() = {
     // If buffer has more items, and head has not already been resent, send next one, otherwise get next from feed.
     runBuffer.dequeueOption match {
-      case Some((run, _)) if run.offset == JobController.offset + 1 => //run the first from buffer
+      case Some((run, _)) if run.canBeExecutedNext => //run the first from buffer
         implicit val tid = run.msg.transid
         //avoid sending dupes
         if (resent.isEmpty) {
@@ -550,31 +547,32 @@ object ContainerPool {
    * Returns None iff no matching container is in the idle pool.
    * Does not consider pre-warmed containers.
    *
-   * @param job the request to be run
+   * @param run the request to be run
    * @param idles a map of idle containers, awaiting work
    * @return a container if one found
    */
-  protected[containerpool] def schedule[A](job: Run, idles: Map[A, ContainerData])(
+  protected[containerpool] def schedule[A](run: Run, idles: Map[A, ContainerData])(
     implicit logging: Logging): Option[(A, ContainerData)] = {
-    val invocationNamespace = job.msg.user.namespace.name
-    val action = job.action
+    val invocationNamespace = run.msg.user.namespace.name
+    val action = run.action
 
     idles
       .find {
-        case (_, c @ WarmedData(_, `invocationNamespace`, `action`, _, _, _)) if c.canRun(job) && c.hasCapacity() =>
+        case (_, c @ WarmedData(_, `invocationNamespace`, `action`, _, _, _)) if c.canExecute(run) && c.hasCapacity() =>
           true
         case _ => false
       }
       .orElse {
         idles.find {
-          case (_, c @ WarmingData(_, `invocationNamespace`, `action`, _, _)) if c.canRun(job) && c.hasCapacity() =>
+          case (_, c @ WarmingData(_, `invocationNamespace`, `action`, _, _)) if c.canExecute(run) && c.hasCapacity() =>
             true
           case _ => false
         }
       }
       .orElse {
         idles.find {
-          case (_, c @ WarmingColdData(`invocationNamespace`, `action`, _, _)) if c.canRun(job) && c.hasCapacity() =>
+          case (_, c @ WarmingColdData(`invocationNamespace`, `action`, _, _))
+              if c.canExecute(run) && c.hasCapacity() =>
             true
           case _ => false
         }
