@@ -48,10 +48,11 @@ case class JobController(private var id: String,
     assert(runningOffset.isEmpty)
     runningOffset = Option(job.offset)
 
-    println(s"\nRequest ${job.offset} STARTED running\n")
-
     val cId = container.containerId
-    if (containerId.isEmpty) containerId = Option(cId)
+    if (containerId.isEmpty) {
+      containerId = Option(cId)
+      logging.info(this, s"$printActor controller bound to $cId")
+    }
     else if (containerId.get != cId)
       throw new BindingException(cId)
   }
@@ -68,7 +69,7 @@ case class JobController(private var id: String,
     containerId = Option.empty
     lastExecutedOffset = snapshotOffset - 1
     isRestoring = true
-    println(s"\nController unbound for $printActor\n")
+    logging.info(this, s"$printActor controller un-bound")
   }
 
   private class BindingException(cId: ContainerId)
