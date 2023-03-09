@@ -135,8 +135,6 @@ class MessageFeed(description: String,
     case Event(Ready, _) =>
       fillPipeline()
       goto(FillingPipeline)
-
-    case _ => stay
   }
 
   // wait for fill to complete, and keep filling if there is
@@ -157,12 +155,6 @@ class MessageFeed(description: String,
       } else {
         goto(DrainingPipeline)
       }
-
-    case Event(ChangeOffset(offset), _) =>
-      changeConsumerOffset(offset)
-      stay
-
-    case _ => stay
   }
 
   when(DrainingPipeline) {
@@ -173,7 +165,9 @@ class MessageFeed(description: String,
         fillPipeline()
         goto(FillingPipeline)
       } else stay
+  }
 
+  whenUnhandled {
     case Event(ChangeOffset(offset), _) =>
       changeConsumerOffset(offset)
       stay
