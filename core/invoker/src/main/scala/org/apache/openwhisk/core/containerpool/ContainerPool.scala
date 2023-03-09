@@ -258,7 +258,6 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
         // There are currently actions waiting to be executed before this action gets executed.
         // These waiting actions were not able to free up enough memory.
         runBuffer = runBuffer.enqueue(r)
-        processBufferOrFeed()
       }
 
     // Request has already been executed and state is not been restoring, process next request
@@ -290,6 +289,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
         freePool = freePool - sender()
       }
       processBufferOrFeed()
+
     // Container is prewarmed and ready to take work
     case NeedWork(data: PreWarmedData) =>
       prewarmStartingPool = prewarmStartingPool - sender()
@@ -297,8 +297,6 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
 
     // Container got removed
     case ContainerRemoved(replacePrewarm) =>
-      println(s"\nCONTAINER REMOVED\n")
-
       // if container was in free pool, it may have been processing (but under capacity),
       // so there is capacity to accept another job request
       freePool.get(sender()).foreach { c =>
