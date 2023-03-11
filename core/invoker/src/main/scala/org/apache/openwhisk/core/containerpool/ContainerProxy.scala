@@ -426,12 +426,14 @@ class ContainerProxy(factory: (TransactionId,
       } else {
         goto(Ready) using newData
       }
+
     case Event(job: Run, data: WarmedData)
         if activeCount >= data.action.limits.concurrency.maxConcurrent && !rescheduleJob => //if we are over concurrency limit, and not a failure on resume
       implicit val transid = job.msg.transid
       logging.warn(this, s"buffering for maxed warm container ${data.container}; ${activeCount} activations in flight")
       runBuffer = runBuffer.enqueue(job)
       stay()
+
     case Event(job: Run, data: WarmedData)
         if activeCount < data.action.limits.concurrency.maxConcurrent && !rescheduleJob => //if there was a delay, and not a failure on resume, skip the run
       activeCount += 1
@@ -840,7 +842,7 @@ class ContainerProxy(factory: (TransactionId,
             case (runInterval, response) =>
               println(s"\n$response\n")
               RunController.onExecutionFinished(job)
-              if (job.offset == 10) self ! Remove
+//              if (job.offset == 10) self ! Remove
 
               val initRunInterval = initInterval
                 .map(i => Interval(runInterval.start.minusMillis(i.duration.toMillis), runInterval.end))

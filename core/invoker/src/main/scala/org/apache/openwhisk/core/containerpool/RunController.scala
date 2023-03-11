@@ -103,9 +103,11 @@ object RunController {
   def onExecutionStarted(run: Run, container: Container)(implicit logging: Logging): Unit =
     RunController.of(run).onExecutionStarted(container)(run)
 
+  def onExecutionFailed(): Unit = globalOffset -= 1
+
   def onExecutionFailed(run: Run): Unit = {
     assert(globalOffset == run.offset)
-    globalOffset -= 1
+    onExecutionFailed()
   }
 
   def onExecutionFinished(run: Run)(implicit logging: Logging): Unit =
@@ -178,7 +180,7 @@ object RunController {
      * @return true if it should be executed, false otherwise.
      */
     def shouldBeExecuted: Boolean = {
-      logging.info(this, s"Received request #${run.offset} -> ${run.msg}\n")
+      logging.info(this, s"Received request #${run.offset} -> ${run.msg}")
 
       // Update global offset
       if (run.offset == globalOffset + 1) globalOffset += 1
@@ -206,14 +208,6 @@ object RunController {
      *
      * @return true if the order is correct, false otherwise.
      */
-    def canBeExecutedNow: Boolean = {
-      val result = run.offset == globalOffset
-      if (result)
-        logging.info(this, s"Order correct: [job.offset] ${run.offset} == $globalOffset [globalOffset]")
-      else
-        logging.info(this, s"Order NOT correct: [job.offset] ${run.offset} != $globalOffset [globalOffset]")
-
-      result
-    }
+    def canBeExecutedNow: Boolean = run.offset == globalOffset
   }
 }
