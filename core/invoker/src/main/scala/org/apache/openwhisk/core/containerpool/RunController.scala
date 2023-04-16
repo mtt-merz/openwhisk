@@ -169,6 +169,24 @@ object RunController {
     implicit val transactionId: TransactionId = run.msg.transid
 
     /**
+     * Ensure the request is the next one to be executed.
+     *
+     * @return true if the order is correct, false otherwise.
+     */
+    def canBeExecutedNext: Boolean = run.offset == globalOffset + 1
+
+    /**
+     * Ensure the request has been received in the correct order (it is not guaranteed by OpenWhisk).
+     * If the order is not correct, the request should be enqueued in the buffer.
+     *
+     * While the requests are processed in order till the InvokerReactive level, they arrives to the ContainerPool
+     * in a different order. It depends on the time needed by each request to fetch the action code from the DB.
+     *
+     * @return true if the order is correct, false otherwise.
+     */
+    def canBeExecutedNow: Boolean = run.offset == globalOffset
+
+    /**
      * Check if the job should be executed or not.
      * This is true if
      * (1) the request has never been executed or
@@ -191,23 +209,5 @@ object RunController {
       val currentOffset = controller.runningOffset.getOrElse(controller.lastExecutedOffset)
       run.offset > currentOffset
     }
-
-    /**
-     * Ensure the request is the next one to be executed.
-     *
-     * @return true if the order is correct, false otherwise.
-     */
-    def canBeExecutedNext: Boolean = run.offset == globalOffset + 1
-
-    /**
-     * Ensure the request has been received in the correct order (it is not guaranteed by OpenWhisk).
-     * If the order is not correct, the request should be enqueued in the buffer.
-     *
-     * While the requests are processed in order till the InvokerReactive level, they arrives to the ContainerPool
-     * in a different order. It depends on the time needed by each request to fetch the action code from the DB.
-     *
-     * @return true if the order is correct, false otherwise.
-     */
-    def canBeExecutedNow: Boolean = run.offset == globalOffset
   }
 }

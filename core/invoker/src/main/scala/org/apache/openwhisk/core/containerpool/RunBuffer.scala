@@ -58,6 +58,30 @@ class RunBuffer(private val content: ListMap[Option[ContainerId], SortedSet[Run]
   def nonEmpty: Boolean = !isEmpty
 
   /**
+   * Check if any of the jobs that were unbound when first enqueued should be now put on a different queue.
+   * The method is recursive! Once the outlier has been found, it is enqueued and the method is called again,
+   * until there are no more outliers.
+   *
+   * @return the updated buffer.
+   */
+  def refresh: RunBuffer = {
+    if (!content.contains(Option.empty)) this
+    else {
+      val unboundSet = content(Option.empty)
+      val outlier: Option[Run] = unboundSet.find(RunController.of(_).isBound)
+
+      if (outlier.isEmpty) this
+      else {
+        val run = outlier.get
+        new RunBuffer(unboundSet match {
+          case runs: Set[Run] if runs.size > 1 => content.updated(Option.empty, unboundSet - run)
+          case _ => content - Option.empty
+        }).enqueue(run).refresh
+      }
+    }
+  }
+
+  /**
    * Change the order of the ListMap by moving the current head after the tail.
    * This is useful when a container is busy and we want to check there is work for other containers.
    *
@@ -70,10 +94,12 @@ class RunBuffer(private val content: ListMap[Option[ContainerId], SortedSet[Run]
   override def toString: String = {
     var out = List.empty[String]
     for (entry <- content)
-      out = out :+ s"${entry._1.map {
-        case c: ContainerId => "..." + c.asString takeRight 5
-        case _              => ""
-      }} -> [${entry._2.map(_.offset).mkString(", ")}]"
+      out = out :+ s"${
+        entry._1.map {
+          case c: ContainerId => "..." + c.asString takeRight 5
+          case _ => ""
+        }
+      } -> [${entry._2.map(_.offset).mkString(", ")}]"
 
     s"{${out.mkString(", ")}}"
   }

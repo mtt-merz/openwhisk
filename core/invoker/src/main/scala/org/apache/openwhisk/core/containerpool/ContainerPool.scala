@@ -115,27 +115,30 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
   }
 
   def receive: Receive = {
-    // Request should NOT be executed, go to next request
-    // Request (1) has already been executed AND (2) the actor is not been restoring the state
-    case r: Run if !r.shouldBeExecuted =>
-      logging.info(this, s"Request #${r.offset} SKIPPED, process buffer or feed\n")(r.msg.transid)
-      processBufferOrFeed()
-
-    // Request has not been received in order, add to queue
-    case r: Run if !r.canBeExecutedNow =>
-      logging.info(this, s"Request #${r.offset} is NOT in order")(r.msg.transid)
-      runBuffer = runBuffer.enqueue(r)
-//      processBufferOrFeed()
-
     // A job to run on a container
     //
     // Run messages are received either via the feed or from child containers which cannot process them
     // and send them back to the pool for rescheduling (this may happen if "docker" operations fail
     // for example, or a container has aged and was destroying itself when a new request was assigned)
+
+    // Job should NOT be executed, go to next job.
+    // Job (1) has already been executed AND (2) the actor is not been restoring the state
+    case r: Run if !r.shouldBeExecuted =>
+      logging.info(this, s"Job #${r.offset} SKIPPED, process buffer or feed\n")(r.msg.transid)
+      processBufferOrFeed()
+
+    // TODO: if the message comes from the queue, even if it is not in order, it could still be executed!
+    //       The actual ordered job should already be in the queue, bound to a different container.
+    // Job not received in order, add to queue.
+    case r: Run if !r.canBeExecutedNow =>
+      logging.info(this, s"Job #${r.offset} is NOT in order")(r.msg.transid)
+      runBuffer = runBuffer.enqueue(r)
+
+    // Job received correctly
     case r: Run =>
       implicit val transactionId: TransactionId = r.msg.transid
 
-      logging.info(this, s"Running request #${r.offset}\n")
+      logging.info(this, s"Running job #${r.offset}\n")
 
       // Check if the message is resent from the buffer. Only the first message on the buffer can be resent.
       val isResentFromBuffer = runBuffer.nonEmpty && runBuffer.dequeueOption.exists(_._1.msg == r.msg)
