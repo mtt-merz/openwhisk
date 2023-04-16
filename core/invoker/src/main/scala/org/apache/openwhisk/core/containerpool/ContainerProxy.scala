@@ -195,7 +195,7 @@ case class WarmedData(override val container: Container,
 
 // Events received by the actor
 case class Start(exec: CodeExec[_], memoryLimit: ByteSize, ttl: Option[FiniteDuration] = None)
-case class Run(action: ExecutableWhiskAction, msg: ActivationMessage, retryLogDeadline: Option[Deadline] = None){
+case class Run(action: ExecutableWhiskAction, msg: ActivationMessage, retryLogDeadline: Option[Deadline] = None) {
   var offset: Long = msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
 }
 case object Remove
@@ -841,7 +841,7 @@ class ContainerProxy(factory: (TransactionId,
           .map {
             case (runInterval, response) =>
               println(s"\n$runInterval\n$response\n")
-              RunController.onExecutionSuccess(job)
+              RunController.onExecutionSuccess(job, runInterval, response)
 //              if (job.offset == 10) self ! Remove
 
               val initRunInterval = initInterval

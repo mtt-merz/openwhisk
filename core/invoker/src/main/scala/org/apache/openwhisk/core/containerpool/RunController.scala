@@ -1,7 +1,12 @@
 package org.apache.openwhisk.core.containerpool
 
 import org.apache.openwhisk.common.{Logging, TransactionId}
+import org.apache.openwhisk.core.entity.ActivationResponse
 import spray.json.{JsNumber, JsString}
+
+import java.io.{File, FileWriter}
+import java.text.SimpleDateFormat
+import java.util.Calendar
 
 /**
  * Binds each XActor instance to a ContainerId (different instances can be bound to the same container).
@@ -33,10 +38,21 @@ case class RunController(private var id: String,
   /**
    * Update the  offset and eventually the snapshot offset
    */
-  private def onExecutionSuccess(implicit job: Run): Unit = {
+  private def onExecutionSuccess(runInterval: Interval, response: ActivationResponse)(implicit job: Run): Unit = {
     assert(runningOffset.isDefined && runningOffset.get == job.offset)
     runningOffset = Option.empty
     lastExecutedOffset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
+
+    // Log execution result
+    val writer = new FileWriter(new File("/home/m/Workspaces/openwhisk/logs/general.csv"), true)
+    val format = new SimpleDateFormat("yyyy.MM.dd HH:mm:ss")
+    writer.write(
+      s"${format.format(Calendar.getInstance().getTime)}; " +
+        s"${runInterval.duration.length}; " +
+        s"${job.offset}; " +
+        s"${response.result.get}" +
+        s"\n")
+    writer.close()
   }
 
   /**
@@ -110,8 +126,9 @@ object RunController {
     onExecutionFailure()
   }
 
-  def onExecutionSuccess(run: Run)(implicit logging: Logging): Unit =
-    RunController.of(run).onExecutionSuccess(run)
+  def onExecutionSuccess(run: Run, runInterval: Interval, response: ActivationResponse)(
+    implicit logging: Logging): Unit =
+    RunController.of(run).onExecutionSuccess(runInterval, response)(run)
 
   /**
    * Un-bind the controllers bound to the given container and calculate the offset to restore.
