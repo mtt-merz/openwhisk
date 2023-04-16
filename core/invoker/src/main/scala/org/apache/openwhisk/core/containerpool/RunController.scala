@@ -33,7 +33,7 @@ case class RunController(private var id: String,
   /**
    * Update the  offset and eventually the snapshot offset
    */
-  private def onExecutionFinished(implicit job: Run): Unit = {
+  private def onExecutionSuccess(implicit job: Run): Unit = {
     assert(runningOffset.isDefined && runningOffset.get == job.offset)
     runningOffset = Option.empty
     lastExecutedOffset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
@@ -100,18 +100,18 @@ object RunController {
     })
   }
 
-  def onExecutionStarted(run: Run, container: Container)(implicit logging: Logging): Unit =
+  def onExecutionStart(run: Run, container: Container)(implicit logging: Logging): Unit =
     RunController.of(run).onExecutionStarted(container)(run)
 
-  def onExecutionFailed(): Unit = globalOffset -= 1
+  def onExecutionFailure(): Unit = globalOffset -= 1
 
-  def onExecutionFailed(run: Run): Unit = {
+  def onExecutionFailure(run: Run): Unit = {
     assert(globalOffset == run.offset)
-    onExecutionFailed()
+    onExecutionFailure()
   }
 
-  def onExecutionFinished(run: Run)(implicit logging: Logging): Unit =
-    RunController.of(run).onExecutionFinished(run)
+  def onExecutionSuccess(run: Run)(implicit logging: Logging): Unit =
+    RunController.of(run).onExecutionSuccess(run)
 
   /**
    * Un-bind the controllers bound to the given container and calculate the offset to restore.

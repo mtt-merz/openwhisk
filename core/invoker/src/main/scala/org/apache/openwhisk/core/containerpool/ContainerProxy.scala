@@ -829,7 +829,7 @@ class ContainerProxy(factory: (TransactionId,
           "deadline" -> (Instant.now.toEpochMilli + actionTimeout.toMillis).toString.toJson)
 
         // bind controller instance to this container; if already bound assure it is the right one
-        RunController.onExecutionStarted(job, container)
+        RunController.onExecutionStart(job, container)
 
         container
           .run(
@@ -840,8 +840,8 @@ class ContainerProxy(factory: (TransactionId,
             reschedule)(job.msg.transid)
           .map {
             case (runInterval, response) =>
-              println(s"\n$response\n")
-              RunController.onExecutionFinished(job)
+              println(s"\n$runInterval\n$response\n")
+              RunController.onExecutionSuccess(job)
 //              if (job.offset == 10) self ! Remove
 
               val initRunInterval = initInterval

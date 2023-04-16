@@ -155,7 +155,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
       if (warmContainer.isEmpty && RunController.of(r).isBound) {
         // Controller is bound to a container but it is not in the freePool
         logging.warn(this, s"Designated container ${RunController.of(r).containerId.get} is busy")
-        RunController.onExecutionFailed(r)
+        RunController.onExecutionFailure(r)
 
         if (isResentFromBuffer) {
           if (runBuffer.isReorderingUseful) {
@@ -239,7 +239,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
             // if a job is rescheduled but the container it was allocated to has not yet destroyed itself
             // (and a new container would over commit the pool)
 
-            RunController.onExecutionFailed(r)
+            RunController.onExecutionFailure(r)
 
             val isErrorLogged = r.retryLogDeadline.map(_.isOverdue).getOrElse(true)
             val retryLogDeadline = if (isErrorLogged) {
