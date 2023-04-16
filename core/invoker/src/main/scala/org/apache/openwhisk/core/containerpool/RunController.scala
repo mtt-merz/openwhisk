@@ -87,7 +87,7 @@ object RunController {
   def of(run: Run)(implicit logging: Logging): RunController = {
     implicit val transactionId: TransactionId = run.msg.transid
 
-    val id = run.msg.getContentField("id").asInstanceOf[JsString].value
+    val id = run.msg.getContentField("actor_id").asInstanceOf[JsString].value
     val kind = run.msg.action.name.asString
 
     val key = (id, kind)
