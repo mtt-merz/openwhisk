@@ -267,6 +267,9 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
 
     // Container is free to take more work
     case NeedWork(data: WarmedData) =>
+      logging.info(this, "Run finished, refreshing buffer.")
+      runBuffer.refresh
+
       val oldData = freePool.get(sender()).getOrElse(busyPool(sender()))
       val newData =
         data.copy(lastUsed = oldData.lastUsed, activeActivationCount = oldData.activeActivationCount - 1)

@@ -20,8 +20,8 @@ class RunBuffer(private val content: ListMap[Option[ContainerId], SortedSet[Run]
 
     (entry._2.head, new RunBuffer(entry._2 match {
       case runs: Set[Run] if runs.size > 1 => content.updated(entry._1, entry._2.tail)
-      case _                               => content - entry._1
-    }).reorder)
+      case _ => content - entry._1
+    }))
   }
 
   def dequeueOption: Option[(Run, RunBuffer)] = if (isEmpty) None else Some(dequeue)
@@ -39,8 +39,8 @@ class RunBuffer(private val content: ListMap[Option[ContainerId], SortedSet[Run]
     val containerId: Option[ContainerId] = RunController.of(run).containerId
     new RunBuffer(content.updated(containerId, content.get(containerId) match {
       case Some(jobs) => jobs + run
-      case None       => SortedSet[Run](run)(Ordering.by(_.offset))
-    }))
+      case None => SortedSet[Run](run)(Ordering.by(_.offset))
+    })).reorder
   }
 
   def isEmpty: Boolean = size == 0
