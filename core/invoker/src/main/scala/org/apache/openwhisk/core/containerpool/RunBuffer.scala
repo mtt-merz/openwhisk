@@ -40,7 +40,7 @@ class RunBuffer(private val content: ListMap[Option[ContainerId], SortedSet[Run]
     new RunBuffer(content.updated(containerId, content.get(containerId) match {
       case Some(jobs) => jobs + run
       case None => SortedSet[Run](run)(Ordering.by(_.offset))
-    })).reorder
+    }))//.reorder
   }
 
   def isEmpty: Boolean = size == 0

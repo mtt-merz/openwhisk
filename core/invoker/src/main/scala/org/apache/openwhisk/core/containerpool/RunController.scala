@@ -4,10 +4,6 @@ import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.entity.ActivationResponse
 import spray.json.{JsNumber, JsString}
 
-import java.io.{File, FileWriter}
-import java.text.SimpleDateFormat
-import java.util.Calendar
-
 /**
  * Binds each XActor instance to a ContainerId (different instances can be bound to the same container).
  * In this way, the instance can always be ran on the same container.
@@ -44,15 +40,10 @@ case class RunController(private var id: String,
     lastExecutedOffset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
 
     // Log execution result
-    val writer = new FileWriter(new File("/home/m/Workspaces/openwhisk/logs/general.csv"), true)
-    val format = new SimpleDateFormat("yyyy.MM.dd HH:mm:ss")
-    writer.write(
-      s"${format.format(Calendar.getInstance().getTime)}; " +
-        s"${runInterval.duration.length}; " +
-        s"${job.offset}; " +
-        s"${response.result.get}" +
-        s"\n")
-    writer.close()
+    RunLogger.log(
+      "Action executed\n" +
+        s"offset=${job.offset} duration=${runInterval.duration.length}",
+      Some(response.result.get))
   }
 
   /**
