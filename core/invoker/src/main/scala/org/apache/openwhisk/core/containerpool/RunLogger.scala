@@ -1,35 +1,48 @@
 package org.apache.openwhisk.core.containerpool
 
-import spray.json.JsValue
-
 import java.io.{File, FileWriter}
 import java.text.SimpleDateFormat
 import java.util.Calendar
 
 object RunLogger {
-  private var path: Option[String] = Option.empty
+  private val path: String = {
+    val path = s"/home/m/Workspaces/openwhisk/logs/$formattedDateTime"
+    new File(path).mkdir()
 
-  def log(msg: String, data: Option[JsValue] = Option.empty): Unit = {
-    if (path.isEmpty)
-      path = Option(
-        s"/home/m/Workspaces/openwhisk/" +
-          s"logs/$formattedDateTime.txt")
-
-    val m = s"[$formattedDateTime] $msg" +
-      (if (data.isDefined) s"\n${data.get.prettyPrint}\n")
-
-    val writer = new FileWriter(new File(path.get), true)
-    writer.write(s"$m\n")
-    writer.close()
+    path
   }
-
-//  private def formattedDate: String = {
-//    val formatter = new SimpleDateFormat("YYYY-MM-DD")
-//    formatter.format(Calendar.getInstance().getTime)
-//  }
 
   private def formattedDateTime: String = {
     val formatter = new SimpleDateFormat("YYYY-MM-DD'T'HH:mm:ss.sss")
     formatter.format(Calendar.getInstance().getTime)
   }
+
+  def arrival(job: Run): Unit = {
+    val msg = s"${job.offset} " +
+      s"${job.actor} ${job.msg.getContentField("message")} " +
+      s"${System.currentTimeMillis()}"
+
+    printOnFile(msg, "arrival")
+  }
+
+  def execution(job: Run, interval: Interval): Unit = {
+    val msg = s"${job.offset} " +
+      s"${job.actor} ${job.msg.getContentField("message")} " +
+      s"${System.currentTimeMillis()} " +
+      s"${interval.duration.length}"
+
+    printOnFile(msg, "execution")
+  }
+
+  //  def log(msg: String, data: Option[JsValue] = Option.empty): Unit = {
+//    val m = s"[$formattedDateTime] $msg" +
+//      (if (data.isDefined) s"\n${data.get.prettyPrint}\n")
+//  }
+
+  private def printOnFile(msg: String, fileName: String): Unit = {
+    val writer = new FileWriter(new File(s"$path/$fileName.csv"), true)
+    writer.write(s"$msg\n")
+    writer.close()
+  }
+
 }

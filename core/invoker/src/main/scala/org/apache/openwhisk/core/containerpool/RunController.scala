@@ -17,6 +17,8 @@ case class RunController(private var id: String,
                          var containerId: Option[ContainerId] = Option.empty)(
   implicit val logging: Logging,
   implicit val transactionId: TransactionId) {
+  private val label = s"${kind.capitalize}@$id"
+
 
   private var runningOffset: Option[Long] = Option.empty
   private var lastExecutedOffset: Long = -1
@@ -39,11 +41,7 @@ case class RunController(private var id: String,
     runningOffset = Option.empty
     lastExecutedOffset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
 
-    // Log execution result
-    RunLogger.log(
-      "Action executed\n" +
-        s"offset=${job.offset} duration=${runInterval.duration.length}",
-      Some(response.result.get))
+    RunLogger.execution(job, runInterval)
   }
 
   /**
@@ -60,12 +58,10 @@ case class RunController(private var id: String,
     val cId = container.containerId
     if (containerId.isEmpty) {
       containerId = Option(cId)
-      logging.info(this, s"$printActor BOUND to $cId")
+      logging.info(this, s"$label BOUND to $cId")
     } else if (containerId.get != cId)
       throw new BindingException(cId)
   }
-
-  private val printActor = s"${kind.capitalize}@$id"
 
   /**
    * Reset the controller binding.
@@ -75,16 +71,16 @@ case class RunController(private var id: String,
   private def unBind(): Unit = {
     if (!isBound) throw new UnBindingException()
 
-    logging.info(this, s"$printActor UN-BOUND from ${containerId.get}")
+    logging.info(this, s"$label UN-BOUND from ${containerId.get}")
     containerId = Option.empty
     lastExecutedOffset = snapshotOffset - 1
     isRestoring = true
   }
 
   private class BindingException(cId: ContainerId)
-      extends Exception(s"$printActor operations should be ran on ${containerId.get}, not on $cId") {}
+      extends Exception(s"$label operations should be ran on ${containerId.get}, not on $cId") {}
 
-  private class UnBindingException() extends Exception(s"$printActor is not bound") {}
+  private class UnBindingException() extends Exception(s"$label is not bound") {}
 }
 
 object RunController {
@@ -101,7 +97,7 @@ object RunController {
     controllers.getOrElse(key, {
       val binding = new RunController(id, kind)
       controllers += (key -> binding)
-      logging.info(this, s"Controller initialized for ${binding.printActor}")
+      logging.info(this, s"Controller initialized for ${binding.label}")
 
       binding
     })
@@ -207,6 +203,7 @@ object RunController {
      */
     def shouldBeExecuted: Boolean = {
       logging.info(this, s"Received request #${run.offset} -> ${run.msg}")
+      RunLogger.arrival(run)
 
       // Update global offset
       if (run.offset == globalOffset + 1) globalOffset += 1
