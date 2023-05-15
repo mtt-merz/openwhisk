@@ -19,7 +19,6 @@ case class RunController(private var id: String,
   implicit val transactionId: TransactionId) {
   private val label = s"${kind.capitalize}@$id"
 
-
   private var runningOffset: Option[Long] = Option.empty
   private var lastExecutedOffset: Long = -1
   private var snapshotOffset: Long = 0
@@ -42,6 +41,7 @@ case class RunController(private var id: String,
     lastExecutedOffset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
 
     RunLogger.execution(job, runInterval)
+    RunLogger.result(job, runInterval, response)
   }
 
   /**

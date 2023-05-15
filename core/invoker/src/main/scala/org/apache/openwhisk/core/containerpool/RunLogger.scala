@@ -1,12 +1,14 @@
 package org.apache.openwhisk.core.containerpool
 
+import org.apache.openwhisk.core.entity.ActivationResponse
+
 import java.io.{File, FileWriter}
 import java.text.SimpleDateFormat
 import java.util.Calendar
 
 object RunLogger {
   private val path: String = {
-    val path = s"/home/m/Workspaces/openwhisk/logs/$formattedDateTime"
+    val path = s"/home/m/Workspaces/thesis/logs/$formattedDateTime"
     new File(path).mkdir()
 
     path
@@ -32,6 +34,16 @@ object RunLogger {
       s"${interval.duration.length}"
 
     printOnFile(msg, "execution")
+  }
+
+  def result(job: Run, interval: Interval, response: ActivationResponse): Unit = {
+    val msg = s"${job.offset} " +
+      s"${job.actor} ${job.msg.getContentField("message")} " +
+      s"${System.currentTimeMillis()} " +
+      s"${interval.duration.length}\n" +
+      s"${response.result.get.prettyPrint}\n"
+
+    printOnFile(msg, "result")
   }
 
   //  def log(msg: String, data: Option[JsValue] = Option.empty): Unit = {
