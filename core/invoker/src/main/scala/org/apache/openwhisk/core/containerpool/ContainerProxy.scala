@@ -180,12 +180,9 @@ case class WarmedData(override val container: Container,
 case class Start(exec: CodeExec[_], memoryLimit: ByteSize, ttl: Option[FiniteDuration] = None)
 case class Run(action: ExecutableWhiskAction, msg: ActivationMessage, retryLogDeadline: Option[Deadline] = None) {
 
-  private val actorType: String = msg.getContentField("actor_type").asInstanceOf[JsString].value
-  private val actorId: String = msg.getContentField("actor_id").asInstanceOf[JsString].value
-  val actor: String = s"${actorType.capitalize}@$actorId"
-
   var offset: Long = msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
 }
+
 case object Remove
 case class HealthPingEnabled(enabled: Boolean)
 

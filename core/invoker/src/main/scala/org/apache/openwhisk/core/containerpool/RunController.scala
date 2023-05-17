@@ -2,7 +2,14 @@ package org.apache.openwhisk.core.containerpool
 
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.entity.ActivationResponse
-import spray.json.{JsNumber, JsString}
+import spray.json.{JsBoolean, JsNumber, JsString}
+
+import java.util.{Calendar, Date}
+
+
+private val snapshotActionsCount = 100
+private val snapshotTimeInterval = 10000
+
 
 /**
  * Binds each XActor instance to a ContainerId (different instances can be bound to the same container).
@@ -12,37 +19,88 @@ import spray.json.{JsNumber, JsString}
  * @param id is the actor instance identifier
  * @param kind is the actor instance class
  */
-case class RunController(private var id: String,
-                         private var kind: String,
-                         var containerId: Option[ContainerId] = Option.empty)(
+case class RunController(private val id: String,
+                         private val kind: String,
+                         var boundContainerId: Option[ContainerId] = Option.empty,
+                         private var restoringTargetOffset: Option[Long] = Option.empty,
+                         private var runningOffset: Option[Long] = Option.empty,
+                         private var lastExecutedOffset: Long = -1,
+                         private var snapshotOffset: Long = 0,
+                         private var snapshotTimestamp: Date = Calendar.getInstance().getTime)(
   implicit val logging: Logging,
   implicit val transactionId: TransactionId) {
+
   private val label = s"${kind.capitalize}@$id"
-
-  private var runningOffset: Option[Long] = Option.empty
-  private var lastExecutedOffset: Long = -1
-  private var snapshotOffset: Long = 0
-
-  private var isRestoring: Boolean = false
 
   /**
    * Check if the controller is bound to a ContainerId
    *
    * @return true if it is bound, false otherwise.
    */
-  def isBound: Boolean = containerId.isDefined
+  def isBound: Boolean = boundContainerId.isDefined
 
   /**
-   * Update the  offset and eventually the snapshot offset
+   * Bind the received container to the controller.
+   *
+   * @param container is the container to bind
    */
-  private def onExecutionSuccess(runInterval: Interval, response: ActivationResponse)(implicit job: Run): Unit = {
-    assert(runningOffset.isDefined && runningOffset.get == job.offset)
-    runningOffset = Option.empty
-    lastExecutedOffset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
+  private def bind(container: Container): Unit = {
+    val cId = container.containerId
 
-    RunLogger.execution(job, runInterval)
-    RunLogger.result(job, runInterval, response)
+    boundContainerId = Option(cId)
+    logging.info(this, s"$label BOUND to $cId")
   }
+
+  /**
+   * Reset the controller binding.
+   *
+   * @throws UnBindingException if the controller is already unbound
+   */
+  private def unBind(): Unit = {
+    if (!isBound) throw new UnBindingException()
+
+    logging.info(this, s"$label UN-BOUND from ${boundContainerId.get}")
+    boundContainerId = Option.empty
+
+    restoringTargetOffset = Option(lastExecutedOffset)
+    lastExecutedOffset = snapshotOffset - 1
+  }
+
+  private def refine()(implicit job: Run): Run =
+    job.copy(msg = {
+      var msg = job.msg
+      msg = msg.addContentField("persist", JsBoolean(shouldPerformSnapshot))
+      msg = msg.addContentField("isolate", JsBoolean(isRestoring))
+
+      msg
+    })
+
+
+  /**
+   * Check if there is the need to perform a snapshot.
+   * This is true if
+   * (1) the time elapsed since the last snapshot is greater or equal to the threshold
+   * (2) the executed actions count since the last snapshot is greater or equal to the threshold
+   *
+   * @return true if the snapshot should be performed, false otherwise.
+   */
+  private def shouldPerformSnapshot: Boolean = {
+    val currentDate = Calendar.getInstance().getTime
+    val dateInterval = currentDate.getTime - snapshotTimestamp.getTime
+    if (dateInterval >= snapshotTimeInterval) true
+    else {
+      val actionsCount = runningOffset.get - snapshotOffset
+      actionsCount >= snapshotActionsCount
+    }
+  }
+
+  /**
+   * Check if the state is being restored.
+   * This is true if the restoring target offset is defined.
+   *
+   * @return
+   */
+  private def isRestoring: Boolean = restoringTargetOffset.isDefined
 
   /**
    * Bind a container to the controller, if not currently bound; if already bound,
@@ -56,29 +114,34 @@ case class RunController(private var id: String,
     runningOffset = Option(job.offset)
 
     val cId = container.containerId
-    if (containerId.isEmpty) {
-      containerId = Option(cId)
-      logging.info(this, s"$label BOUND to $cId")
-    } else if (containerId.get != cId)
+    if (boundContainerId.isEmpty) bind(container)
+    else if (boundContainerId.get != cId)
       throw new BindingException(cId)
   }
 
   /**
-   * Reset the controller binding.
-   *
-   * @throws UnBindingException if the controller is already unbound
+   * Update the  offset and eventually the snapshot offset
    */
-  private def unBind(): Unit = {
-    if (!isBound) throw new UnBindingException()
+  private def onExecutionSuccess(runInterval: Interval, response: ActivationResponse)(implicit job: Run): Unit = {
+    assert(runningOffset.isDefined && runningOffset.get == job.offset)
 
-    logging.info(this, s"$label UN-BOUND from ${containerId.get}")
-    containerId = Option.empty
-    lastExecutedOffset = snapshotOffset - 1
-    isRestoring = true
+    runningOffset = Option.empty
+    lastExecutedOffset = job.msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
+
+    if (isRestoring && lastExecutedOffset == restoringTargetOffset.get)
+      restoringTargetOffset = Option.empty
+
+    if (shouldPerformSnapshot){
+      snapshotOffset = job.offset
+      snapshotTimestamp = Calendar.getInstance().getTime
+    }
+
+    RunLogger.execution(job, runInterval)
+    RunLogger.result(job, runInterval, response)
   }
 
   private class BindingException(cId: ContainerId)
-      extends Exception(s"$label operations should be ran on ${containerId.get}, not on $cId") {}
+      extends Exception(s"$label operations should be ran on ${boundContainerId.get}, not on $cId") {}
 
   private class UnBindingException() extends Exception(s"$label is not bound") {}
 }
@@ -103,8 +166,11 @@ object RunController {
     })
   }
 
+  def refine(run: Run)(implicit logging: Logging): Run =
+   of(run).refine()(run)
+
   def onExecutionStart(run: Run, container: Container)(implicit logging: Logging): Unit =
-    RunController.of(run).onExecutionStarted(container)(run)
+    of(run).onExecutionStarted(container)(run)
 
   def onExecutionFailure(): Unit = globalOffset -= 1
 
@@ -115,7 +181,7 @@ object RunController {
 
   def onExecutionSuccess(run: Run, runInterval: Interval, response: ActivationResponse)(
     implicit logging: Logging): Unit =
-    RunController.of(run).onExecutionSuccess(runInterval, response)(run)
+    of(run).onExecutionSuccess(runInterval, response)(run)
 
   /**
    * Un-bind the controllers bound to the given container and calculate the offset to restore.
@@ -128,7 +194,7 @@ object RunController {
 
     var offsets: List[Long] = List.empty
     controllers.values.foreach {
-      case controller @ RunController(_, _, `containerId`) =>
+      case controller @ RunController(_, _, `containerId`, _, _, _, _, _) =>
         controller.unBind()
         offsets = offsets :+ controller.snapshotOffset
       case _ =>
@@ -154,8 +220,8 @@ object RunController {
     def canExecute(run: Run): Boolean = {
       val controller = of(run)
 
-      if (controller.containerId.isEmpty || data.getContainer.isEmpty) true
-      else data.getContainer.get.containerId == controller.containerId.get
+      if (controller.boundContainerId.isEmpty || data.getContainer.isEmpty) true
+      else data.getContainer.get.containerId == controller.boundContainerId.get
     }
   }
 
@@ -191,7 +257,7 @@ object RunController {
     def canBeExecutedNow: Boolean = run.offset == globalOffset
 
     /**
-     * Check if the job should be executed or not.
+     * Check if the job should be executed.
      * This is true if
      * (1) the request has never been executed or
      * (2) the request should be re-executed to restore the container state.
