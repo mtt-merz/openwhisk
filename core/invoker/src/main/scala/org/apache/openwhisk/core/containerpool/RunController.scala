@@ -6,18 +6,14 @@ import spray.json.{JsBoolean, JsNumber, JsString}
 
 import java.util.{Calendar, Date}
 
-
-private val snapshotActionsCount = 100
-private val snapshotTimeInterval = 10000
-
-
 /**
  * Binds each XActor instance to a ContainerId (different instances can be bound to the same container).
  * In this way, the instance can always be ran on the same container.
+ *
  * Additionally, keeps track of the last executed request offset in the container.
  *
- * @param id is the actor instance identifier
- * @param kind is the actor instance class
+ * @param id the actor instance identifier
+ * @param kind the actor instance class
  */
 case class RunController(private val id: String,
                          private val kind: String,
@@ -42,7 +38,7 @@ case class RunController(private val id: String,
   /**
    * Bind the received container to the controller.
    *
-   * @param container is the container to bind
+   * @param container the container to bind
    */
   private def bind(container: Container): Unit = {
     val cId = container.containerId
@@ -75,19 +71,25 @@ case class RunController(private val id: String,
       msg
     })
 
+  private val snapshotActionsCount = 100
+  private val snapshotTimeInterval = 10 * 1000 // milliseconds
 
   /**
    * Check if there is the need to perform a snapshot.
    * This is true if
-   * (1) the time elapsed since the last snapshot is greater or equal to the threshold
-   * (2) the executed actions count since the last snapshot is greater or equal to the threshold
+   *
+   *   (1) the time elapsed since the last snapshot is greater or equal to the threshold
+   *
+   *   (2) the executed actions count since the last snapshot is greater or equal to the threshold
    *
    * @return true if the snapshot should be performed, false otherwise.
    */
   private def shouldPerformSnapshot: Boolean = {
     val currentDate = Calendar.getInstance().getTime
     val dateInterval = currentDate.getTime - snapshotTimestamp.getTime
+
     if (dateInterval >= snapshotTimeInterval) true
+    else if (runningOffset.isEmpty) false
     else {
       val actionsCount = runningOffset.get - snapshotOffset
       actionsCount >= snapshotActionsCount
@@ -96,7 +98,7 @@ case class RunController(private val id: String,
 
   /**
    * Check if the state is being restored.
-   * This is true if the restoring target offset is defined.
+   * This is true if [[restoringTargetOffset]] is defined.
    *
    * @return
    */
@@ -106,7 +108,7 @@ case class RunController(private val id: String,
    * Bind a container to the controller, if not currently bound; if already bound,
    * check that the container is the correct one.
    *
-   * @param container is the container to check
+   * @param container the container to check
    * @throws BindingException if there is a bound container but it is not the received one
    */
   private def onExecutionStarted(container: Container)(implicit job: Run): Unit = {
@@ -131,7 +133,7 @@ case class RunController(private val id: String,
     if (isRestoring && lastExecutedOffset == restoringTargetOffset.get)
       restoringTargetOffset = Option.empty
 
-    if (shouldPerformSnapshot){
+    if (shouldPerformSnapshot) {
       snapshotOffset = job.offset
       snapshotTimestamp = Calendar.getInstance().getTime
     }
@@ -167,7 +169,7 @@ object RunController {
   }
 
   def refine(run: Run)(implicit logging: Logging): Run =
-   of(run).refine()(run)
+    of(run).refine()(run)
 
   def onExecutionStart(run: Run, container: Container)(implicit logging: Logging): Unit =
     of(run).onExecutionStarted(container)(run)
@@ -186,7 +188,7 @@ object RunController {
   /**
    * Un-bind the controllers bound to the given container and calculate the offset to restore.
    *
-   * @param container defines the controllers to un-bind.
+   * @param container the controllers to un-bind.
    * @return the offset to restore.
    */
   def removeContainer(container: Container): Option[Long] = {
@@ -214,7 +216,7 @@ object RunController {
      * (1) the related controller is not yet bound to any container or
      * (2) the related controller is bound to THIS container.
      *
-     * @param run is the request.
+     * @param run the request.
      * @return true if the request can be executed in this container, false otherwise.
      */
     def canExecute(run: Run): Boolean = {
@@ -281,4 +283,15 @@ object RunController {
       run.offset > currentOffset
     }
   }
+
+// TODO: if the message comes from the queue, even if it is not in order, it could still be executed!
+//       If so, the actual ordered job should already be in the queue, bound to a different container.
+
+//  implicit class ImplicitRunBuffer(buffer: RunBuffer) {
+//    def shouldEnqueue(job: Run): Boolean = {
+//      if (job.offset == globalOffset) true
+//      else if (job.offset > globalOffset) false
+//      else buffer.lastOffset
+//    }
+//  }
 }

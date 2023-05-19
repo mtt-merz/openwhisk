@@ -19,9 +19,16 @@ object RunLogger {
     formatter.format(Calendar.getInstance().getTime)
   }
 
+  private def getActorLabel(job: Run): String = {
+    val actorType: String = job.msg.action.name.name
+    val actorId: String = job.actorId
+
+    s"$actorType@$actorId"
+  }
+
   def arrival(job: Run): Unit = {
     val msg = s"${job.offset} " +
-      s"${job.actor} ${job.msg.getContentField("message")} " +
+      s"${getActorLabel(job)} ${job.msg.getContentField("message")} " +
       s"${System.currentTimeMillis()}"
 
     printOnFile(msg, "arrival")
@@ -29,7 +36,7 @@ object RunLogger {
 
   def execution(job: Run, interval: Interval): Unit = {
     val msg = s"${job.offset} " +
-      s"${job.actor} ${job.msg.getContentField("message")} " +
+      s"${getActorLabel(job)} ${job.msg.getContentField("message")} " +
       s"${System.currentTimeMillis()} " +
       s"${interval.duration.length}"
 
@@ -38,18 +45,13 @@ object RunLogger {
 
   def result(job: Run, interval: Interval, response: ActivationResponse): Unit = {
     val msg = s"${job.offset} " +
-      s"${job.actor} ${job.msg.getContentField("message")} " +
+      s"${getActorLabel(job)} ${job.msg.getContentField("message")} " +
       s"${System.currentTimeMillis()} " +
       s"${interval.duration.length}\n" +
       s"${response.result.get.prettyPrint}\n"
 
     printOnFile(msg, "result")
   }
-
-  //  def log(msg: String, data: Option[JsValue] = Option.empty): Unit = {
-//    val m = s"[$formattedDateTime] $msg" +
-//      (if (data.isDefined) s"\n${data.get.prettyPrint}\n")
-//  }
 
   private def printOnFile(msg: String, fileName: String): Unit = {
     val writer = new FileWriter(new File(s"$path/$fileName.csv"), true)

@@ -28,7 +28,6 @@ import org.apache.openwhisk.core.entity.size._
 import scala.annotation.tailrec
 import scala.collection.immutable
 import scala.concurrent.duration._
-import scala.language.postfixOps
 import scala.util.{Random, Try}
 
 case class ColdStartKey(kind: String, memory: ByteSize)
@@ -128,8 +127,6 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
       logging.info(this, s"Job #${r.offset} SKIPPED, process buffer or feed\n")(r.msg.transid)
       processBufferOrFeed()
 
-    // TODO: if the message comes from the queue, even if it is not in order, it could still be executed!
-    //       The actual ordered job should already be in the queue, bound to a different container.
     // Job not received in order, add to queue.
     case r: Run if !r.canBeExecutedNow =>
       logging.info(this, s"Job #${r.offset} is NOT in order")(r.msg.transid)
@@ -138,28 +135,27 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
     // Job received correctly, execute.
     case r: Run =>
       implicit val transactionId: TransactionId = r.msg.transid
+      logging.info(this, s"Running job #${r.offset}\n")
 
       // Refine run request
-      val run = RunController.refine(r)
-
-      logging.info(this, s"Running job #${run.offset}\n")
+      val job = RunController.refine(r)
 
       // Check if the message is resent from the buffer. Only the first message on the buffer can be resent.
-      val isResentFromBuffer = runBuffer.nonEmpty && runBuffer.dequeueOption.exists(_._1.msg == run.msg)
+      val isResentFromBuffer = runBuffer.nonEmpty && runBuffer.dequeueOption.exists(_._1.offset == job.offset)
       if (isResentFromBuffer) {
         //remove from resent tracking - it may get resent again, or get processed
         resent = None
       }
 
-      val kind = run.action.exec.kind
-      val memory = run.action.limits.memory.megabytes.MB
+      val kind = job.action.exec.kind
+      val memory = job.action.limits.memory.megabytes.MB
 
       // Get warm container that matches the binding
-      val warmContainer = ContainerPool.schedule(run, freePool)
-      if (warmContainer.isEmpty && RunController.of(run).isBound) {
+      val warmContainer = ContainerPool.schedule(job, freePool)
+      if (warmContainer.isEmpty && RunController.of(job).isBound) {
         // Controller is bound to a container but it is not in the freePool
-        logging.warn(this, s"Designated container ${RunController.of(run).boundContainerId.get} is busy")
-        RunController.onExecutionFailure(run)
+        logging.warn(this, s"Designated container ${RunController.of(job).boundContainerId.get} is busy")
+        RunController.onExecutionFailure(job)
 
         if (isResentFromBuffer) {
           if (runBuffer.isReorderingUseful) {
@@ -169,14 +165,14 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
           }
         } else
           // Add request to buffer, since not yet present
-          runBuffer = runBuffer.enqueue(run)
+          runBuffer = runBuffer.enqueue(job)
       } else {
         val createdContainer = warmContainer
           .map(container => (container, container._2.initingState)) //warmed, warming, and warmingCold always know their state
           .orElse(
             // There was no warm/warming/warmingCold container. Try to take a prewarm container or a cold container.
             // When take prewarm container, has no need to judge whether user memory is enough
-            takePrewarmContainer(run.action)
+            takePrewarmContainer(job.action)
               .map(container => (container, "prewarmed"))
               .orElse {
                 // Is there enough space to create a new container or do other containers have to be removed?
@@ -190,13 +186,13 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
             // Remove a container and create a new one for the given job
             ContainerPool
             // Only free up the amount, that is really needed to free up
-              .remove(freePool, Math.min(run.action.limits.memory.megabytes, memoryConsumptionOf(freePool)).MB)
+              .remove(freePool, Math.min(job.action.limits.memory.megabytes, memoryConsumptionOf(freePool)).MB)
               .map(removeContainer)
               // If the list had at least one entry, enough containers were removed to start the new container. After
               // removing the containers, we are not interested anymore in the containers that have been removed.
               .headOption
               .map(_ =>
-                takePrewarmContainer(run.action)
+                takePrewarmContainer(job.action)
                   .map(container => (container, "recreatedPrewarm"))
                   .getOrElse {
                     val container = (createContainer(memory), "recreated")
@@ -207,7 +203,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
         createdContainer match {
           case Some(((actor, data), containerState)) =>
             //increment active count before storing in pool map
-            val newData = data.nextRun(run)
+            val newData = data.nextRun(job)
             val container = newData.getContainer
 
             if (newData.activeActivationCount < 1) {
@@ -216,7 +212,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
 
             //only move to busyPool if max reached
             if (!newData.hasCapacity()) {
-              if (run.action.limits.concurrency.maxConcurrent > 1) {
+              if (job.action.limits.concurrency.maxConcurrent > 1) {
                 logging.info(
                   this,
                   s"container ${container} is now busy with ${newData.activeActivationCount} activations")
@@ -236,16 +232,16 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
               // Try to process the next item in buffer (or get another message from feed, if buffer is now empty)
               processBufferOrFeed()
             }
-            actor ! run // forwards the run request to the container
-            logContainerStart(run, containerState, newData.activeActivationCount, container)
+            actor ! job // forwards the run request to the container
+            logContainerStart(job, containerState, newData.activeActivationCount, container)
           case None =>
             // this can also happen if createContainer fails to start a new container, or
             // if a job is rescheduled but the container it was allocated to has not yet destroyed itself
             // (and a new container would over commit the pool)
 
-            RunController.onExecutionFailure(run)
+            RunController.onExecutionFailure(job)
 
-            val isErrorLogged = run.retryLogDeadline.map(_.isOverdue).getOrElse(true)
+            val isErrorLogged = job.retryLogDeadline.map(_.isOverdue).getOrElse(true)
             val retryLogDeadline = if (isErrorLogged) {
               logging.warn(
                 this,
@@ -253,17 +249,17 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
                   s"freePoolSize: ${freePool.size} containers and ${memoryConsumptionOf(freePool)} MB, " +
                   s"busyPoolSize: ${busyPool.size} containers and ${memoryConsumptionOf(busyPool)} MB, " +
                   s"maxContainersMemory ${poolConfig.userMemory.toMB} MB, " +
-                  s"userNamespace: ${run.msg.user.namespace.name}, action: ${run.action}, " +
-                  s"needed memory: ${run.action.limits.memory.megabytes} MB, " +
+                  s"userNamespace: ${job.msg.user.namespace.name}, action: ${job.action}, " +
+                  s"needed memory: ${job.action.limits.memory.megabytes} MB, " +
                   s"waiting messages: ${runBuffer.size}")
               MetricEmitter.emitCounterMetric(LoggingMarkers.CONTAINER_POOL_RESCHEDULED_ACTIVATION)
               Some(logMessageInterval.fromNow)
             } else {
-              run.retryLogDeadline
+              job.retryLogDeadline
             }
             if (!isResentFromBuffer) {
               // Add this request to the buffer, as it is not there yet.
-              runBuffer = runBuffer.enqueue(Run(run.action, run.msg, retryLogDeadline))
+              runBuffer = runBuffer.enqueue(Run(job.action, job.msg, retryLogDeadline))
             }
           //buffered items will be processed via processBufferOrFeed()
         }
