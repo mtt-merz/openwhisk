@@ -71,8 +71,8 @@ case class RunController(private val id: String,
       msg
     })
 
-  private val snapshotActionsCount = 100
-  private val snapshotTimeInterval = 10 * 1000 // milliseconds
+  private val snapshotActionsCount = 10
+  private val snapshotTimeInterval = 500 // milliseconds
 
   /**
    * Check if there is the need to perform a snapshot.
@@ -241,13 +241,6 @@ object RunController {
     implicit val transactionId: TransactionId = run.msg.transid
 
     /**
-     * Ensure the request is the next one to be executed.
-     *
-     * @return true if the order is correct, false otherwise.
-     */
-    def canBeExecutedNext: Boolean = run.offset == globalOffset + 1
-
-    /**
      * Ensure the request has been received in the correct order (it is not guaranteed by OpenWhisk).
      * If the order is not correct, the request should be enqueued in the buffer.
      *
@@ -256,7 +249,14 @@ object RunController {
      *
      * @return true if the order is correct, false otherwise.
      */
-    def canBeExecutedNow: Boolean = run.offset == globalOffset
+    def canBeExecutedNow: Boolean = run.offset <= globalOffset
+
+    /**
+     * Ensure the request can be executed next.
+     *
+     * @return true if the order is correct, false otherwise.
+     */
+    def canBeExecutedNext: Boolean = run.offset <= globalOffset + 1
 
     /**
      * Check if the job should be executed.
