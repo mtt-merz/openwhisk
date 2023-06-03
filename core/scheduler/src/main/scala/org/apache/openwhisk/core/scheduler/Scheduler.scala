@@ -26,6 +26,8 @@ import akka.management.cluster.bootstrap.ClusterBootstrap
 import akka.pattern.ask
 import akka.util.Timeout
 import com.typesafe.config.ConfigValueFactory
+import io.altoo.akka.serialization.kryo.DefaultKryoInitializer
+import io.altoo.akka.serialization.kryo.serializer.scala.ScalaKryo
 import kamon.Kamon
 import org.apache.openwhisk.common.Https.HttpsConfig
 import org.apache.openwhisk.common._
@@ -275,7 +277,6 @@ object Scheduler {
       schedulerRpcPort -> null,
       WhiskConfig.actionInvokeConcurrentLimit -> null) ++
       kafkaHosts ++
-      zookeeperHosts ++
       ExecManifest.requiredProperties
 
   def initKamon(instance: SchedulerInstanceId): Unit = {
@@ -426,3 +427,9 @@ case class SchedulingConfig(staleThreshold: FiniteDuration,
                             dropInterval: FiniteDuration,
                             allowOverProvisionBeforeThrottle: Boolean,
                             namespaceOverProvisionBeforeThrottleRatio: Double)
+
+class CompatibleKryoInitializer extends DefaultKryoInitializer {
+  override def preInit(kryo: ScalaKryo): Unit = {
+    kryo.setDefaultSerializer(classOf[com.esotericsoftware.kryo.serializers.CompatibleFieldSerializer[_]])
+  }
+}

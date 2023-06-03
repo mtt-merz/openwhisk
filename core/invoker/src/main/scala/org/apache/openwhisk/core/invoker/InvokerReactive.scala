@@ -50,9 +50,8 @@ object InvokerReactive extends InvokerProvider {
     instance: InvokerInstanceId,
     producer: MessageProducer,
     poolConfig: ContainerPoolConfig,
-    limitsConfig: ConcurrencyLimitConfig)(implicit actorSystem: ActorSystem, logging: Logging): InvokerCore =
+    limitsConfig: IntraConcurrencyLimitConfig)(implicit actorSystem: ActorSystem, logging: Logging): InvokerCore =
     new InvokerReactive(config, instance, producer, poolConfig, limitsConfig)
-
 }
 
 class InvokerReactive(
@@ -60,9 +59,8 @@ class InvokerReactive(
   instance: InvokerInstanceId,
   producer: MessageProducer,
   poolConfig: ContainerPoolConfig = loadConfigOrThrow[ContainerPoolConfig](ConfigKeys.containerPool),
-  limitsConfig: ConcurrencyLimitConfig = loadConfigOrThrow[ConcurrencyLimitConfig](ConfigKeys.concurrencyLimit))(
-  implicit actorSystem: ActorSystem,
-  logging: Logging)
+  limitsConfig: IntraConcurrencyLimitConfig = loadConfigOrThrow[IntraConcurrencyLimitConfig](
+    ConfigKeys.concurrencyLimit))(implicit actorSystem: ActorSystem, logging: Logging)
     extends InvokerCore {
 
   implicit val ec: ExecutionContext = actorSystem.dispatcher
@@ -183,6 +181,8 @@ class InvokerReactive(
     WhiskAction
       .get(entityStore, actionid.id, actionid.rev, fromCache = actionid.rev != DocRevision.empty)
       .flatMap(action => {
+        // action that exceed the limit cannot be executed.
+        action.limits.checkLimits(msg.user)
         action.toExecutableWhiskAction match {
           case Some(executable) =>
             pool ! Run(executable, msg)
@@ -201,6 +201,8 @@ class InvokerReactive(
           val response = t match {
             case _: NoDocumentException =>
               ActivationResponse.applicationError(Messages.actionRemovedWhileInvoking)
+            case e: ActionLimitsException =>
+              ActivationResponse.applicationError(e.getMessage) // return generated failed message
             case _: DocumentTypeMismatchException | _: DocumentUnreadable =>
               ActivationResponse.whiskError(Messages.actionMismatchWhileInvoking)
             case _ =>

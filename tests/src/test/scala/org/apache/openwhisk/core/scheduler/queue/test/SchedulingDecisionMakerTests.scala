@@ -63,7 +63,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 0,
       inProgressContainerCountInNamespace = 0,
       averageDuration = None,
-      limit = 0, // limit is 0
+      namespaceLimit = 0,
+      actionLimit = 0, // limit is 0,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -86,7 +88,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 0,
       inProgressContainerCountInNamespace = 0,
       averageDuration = None,
-      limit = 0, // limit is 0
+      namespaceLimit = 0,
+      actionLimit = 0, // limit is 0
+      maxActionConcurrency = 1,
       stateName = Flushing,
       recipient = testProbe.ref)
 
@@ -113,7 +117,9 @@ class SchedulingDecisionMakerTests
         existingContainerCountInNamespace = 1,
         inProgressContainerCountInNamespace = 2,
         averageDuration = None, // No average duration available
-        limit = 10,
+        namespaceLimit = 10,
+        actionLimit = 10,
+        maxActionConcurrency = 1,
         stateName = state,
         recipient = testProbe.ref)
 
@@ -139,7 +145,9 @@ class SchedulingDecisionMakerTests
         existingContainerCountInNamespace = 5,
         inProgressContainerCountInNamespace = 8,
         averageDuration = Some(1.0), // Some average duration available
-        limit = 20,
+        namespaceLimit = 20,
+        actionLimit = 20,
+        maxActionConcurrency = 1,
         stateName = state,
         recipient = testProbe.ref)
 
@@ -163,7 +171,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1, // but there are already 2 containers in this namespace
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 2,
+      namespaceLimit = 2,
+      actionLimit = 2,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -187,7 +197,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 2, // but there are already 2 containers in this namespace
       inProgressContainerCountInNamespace = 2, // this value includes the count of this action as well.
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -214,7 +226,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1, // but there are already 2 containers in this namespace
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 2,
+      namespaceLimit = 2,
+      actionLimit = 2,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -241,7 +255,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1, // but there are already 2 containers in this namespace
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 2,
+      namespaceLimit = 2,
+      actionLimit = 2,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -268,7 +284,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1, // but there are already 2 containers in this namespace
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 2,
+      namespaceLimit = 2,
+      actionLimit = 2,
+      maxActionConcurrency = 1,
       stateName = NamespaceThrottled,
       recipient = testProbe.ref)
 
@@ -295,7 +313,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1, // but there are already 2 containers in this namespace
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 2,
+      namespaceLimit = 2,
+      actionLimit = 2,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -322,7 +342,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 2, // but there are already 2 containers in this namespace
       inProgressContainerCountInNamespace = 2, // this value includes the count of this action as well.
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -346,7 +368,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -369,7 +393,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = NamespaceThrottled,
       recipient = testProbe.ref)
 
@@ -392,7 +418,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = NamespaceThrottled,
       recipient = testProbe.ref)
 
@@ -416,7 +444,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -440,7 +470,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -464,7 +496,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Flushing,
       recipient = testProbe.ref)
 
@@ -487,7 +521,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Flushing,
       recipient = testProbe.ref)
 
@@ -510,7 +546,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -533,7 +571,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -556,7 +596,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = None,
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -579,7 +621,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 6,
       averageDuration = None,
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -602,7 +646,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 0,
       averageDuration = Some(50), // the average duration exists
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -627,7 +673,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 0,
       averageDuration = Some(1000), // the average duration exists
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -652,7 +700,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 0,
       averageDuration = Some(1000), // the average duration exists
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -679,7 +729,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 0,
       averageDuration = Some(1000), // the average duration exists
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -705,7 +757,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 0,
       averageDuration = Some(1000), // the average duration exists
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -732,7 +786,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 5,
       inProgressContainerCountInNamespace = 0,
       averageDuration = Some(1000), // the average duration exists
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -758,7 +814,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 0,
       inProgressContainerCountInNamespace = 0,
       averageDuration = None, // the average duration exists
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -781,7 +839,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 1,
       averageDuration = Some(1000), // the average duration exists
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Removing,
       recipient = testProbe.ref)
 
@@ -807,7 +867,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 2,
       averageDuration = None, // the average duration does not exist
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Removing,
       recipient = testProbe.ref)
 
@@ -833,7 +895,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 2,
       inProgressContainerCountInNamespace = 0,
       averageDuration = Some(1000), // the average duration exists
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -857,7 +921,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 2,
       inProgressContainerCountInNamespace = 0,
       averageDuration = Some(50), // the average duration gives container throughput of 2
-      limit = 10,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 1,
       stateName = Running,
       recipient = testProbe.ref)
 
@@ -881,7 +947,9 @@ class SchedulingDecisionMakerTests
       existingContainerCountInNamespace = 1,
       inProgressContainerCountInNamespace = 2,
       averageDuration = None, // the average duration does not exist
-      limit = 4,
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 1,
       stateName = Removing,
       recipient = testProbe.ref)
 
@@ -892,5 +960,174 @@ class SchedulingDecisionMakerTests
     // it should subtract the in-progress number so it is supposed to be 2
     // but there is not enough capacity, it becomes 1
     testProbe.expectMsg(DecisionResults(EnableNamespaceThrottling(false), 1))
+  }
+
+  it should "correctly calculate demand is met when action concurrency >1 w/ average duration and no stale activations" in {
+    val decisionMaker = system.actorOf(SchedulingDecisionMaker.props(testNamespace, action, schedulingConfig))
+    val testProbe = TestProbe()
+
+    // container
+    val msg = QueueSnapshot(
+      initialized = true,
+      incomingMsgCount = new AtomicInteger(0),
+      currentMsgCount = 4,
+      existingContainerCount = 2,
+      inProgressContainerCount = 0,
+      staleActivationNum = 0,
+      existingContainerCountInNamespace = 2,
+      inProgressContainerCountInNamespace = 0,
+      averageDuration = Some(100.0),
+      namespaceLimit = 4,
+      actionLimit = 4,
+      maxActionConcurrency = 2,
+      stateName = Running,
+      recipient = testProbe.ref)
+
+    decisionMaker ! msg
+
+    // available messages is 4 with duration equaling the stale threshold and action concurrency of 2 so needed containers
+    // should be exactly 2
+    testProbe.expectNoMessage()
+  }
+
+  it should "add containers when action concurrency >1 w/ average duration and demand is not met" in {
+    val decisionMaker = system.actorOf(SchedulingDecisionMaker.props(testNamespace, action, schedulingConfig))
+    val testProbe = TestProbe()
+
+    // container
+    val msg = QueueSnapshot(
+      initialized = true,
+      incomingMsgCount = new AtomicInteger(0),
+      currentMsgCount = 20,
+      existingContainerCount = 2,
+      inProgressContainerCount = 0,
+      staleActivationNum = 0,
+      existingContainerCountInNamespace = 2,
+      inProgressContainerCountInNamespace = 0,
+      averageDuration = Some(50.0),
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 3,
+      stateName = Running,
+      recipient = testProbe.ref)
+
+    decisionMaker ! msg
+
+    // available messages is 20 and throughput should be 100.0 / 50.0 * 3 = 6
+    // existing container is 2 so can handle 12 messages, therefore need 2 more containers
+    testProbe.expectMsg(DecisionResults(AddContainer, 2))
+  }
+
+  it should "add containers when action concurrency >1 w/ average duration and demand is not met and has stale activations" in {
+    val decisionMaker = system.actorOf(SchedulingDecisionMaker.props(testNamespace, action, schedulingConfig))
+    val testProbe = TestProbe()
+
+    // container
+    val msg = QueueSnapshot(
+      initialized = true,
+      incomingMsgCount = new AtomicInteger(0),
+      currentMsgCount = 30,
+      existingContainerCount = 2,
+      inProgressContainerCount = 0,
+      staleActivationNum = 10,
+      existingContainerCountInNamespace = 2,
+      inProgressContainerCountInNamespace = 0,
+      averageDuration = Some(50.0),
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 3,
+      stateName = Running,
+      recipient = testProbe.ref)
+
+    decisionMaker ! msg
+
+    // available messages is 30 and throughput should be 100.0 / 50.0 * 3 = 6
+    // existing container is 2 so can handle 12 messages, therefore need 2 more containers for non-stale
+    // stale has 10 activations so need another additional 2
+    testProbe.expectMsg(DecisionResults(AddContainer, 4))
+  }
+
+  it should "add containers when action concurrency >1 when no average duration and there are stale activations" in {
+    val decisionMaker = system.actorOf(SchedulingDecisionMaker.props(testNamespace, action, schedulingConfig))
+    val testProbe = TestProbe()
+
+    // container
+    val msg = QueueSnapshot(
+      initialized = true,
+      incomingMsgCount = new AtomicInteger(0),
+      currentMsgCount = 10,
+      existingContainerCount = 1,
+      inProgressContainerCount = 0,
+      staleActivationNum = 10,
+      existingContainerCountInNamespace = 2,
+      inProgressContainerCountInNamespace = 0,
+      averageDuration = None,
+      namespaceLimit = 10,
+      actionLimit = 10,
+      maxActionConcurrency = 3,
+      stateName = Running,
+      recipient = testProbe.ref)
+
+    decisionMaker ! msg
+
+    // stale messages are 10. want stale to be handled by first pass of requests from containers so
+    // 10 / 3 = 4.0
+    testProbe.expectMsg(DecisionResults(AddContainer, 4))
+  }
+
+  it should "add only up to the action container limit if less than the namespace limit" in {
+    val decisionMaker = system.actorOf(SchedulingDecisionMaker.props(testNamespace, action, schedulingConfig))
+    val testProbe = TestProbe()
+
+    // container
+    val msg = QueueSnapshot(
+      initialized = true,
+      incomingMsgCount = new AtomicInteger(0),
+      currentMsgCount = 100,
+      existingContainerCount = 1,
+      inProgressContainerCount = 0,
+      staleActivationNum = 0,
+      existingContainerCountInNamespace = 2,
+      inProgressContainerCountInNamespace = 0,
+      averageDuration = Some(100.0),
+      namespaceLimit = 10,
+      actionLimit = 5,
+      maxActionConcurrency = 3,
+      stateName = Running,
+      recipient = testProbe.ref)
+
+    decisionMaker ! msg
+
+    // one container already exists with an action limit of 5. Number of messages will exceed limit of containers
+    // so use smaller of the two limits
+    testProbe.expectMsg(DecisionResults(AddContainer, 4))
+  }
+
+  it should "add only up to the namespace limit total if existing containers in namespace prevents reaching action limit" in {
+    val decisionMaker = system.actorOf(SchedulingDecisionMaker.props(testNamespace, action, schedulingConfig))
+    val testProbe = TestProbe()
+
+    // container
+    val msg = QueueSnapshot(
+      initialized = true,
+      incomingMsgCount = new AtomicInteger(0),
+      currentMsgCount = 100,
+      existingContainerCount = 1,
+      inProgressContainerCount = 0,
+      staleActivationNum = 0,
+      existingContainerCountInNamespace = 7,
+      inProgressContainerCountInNamespace = 0,
+      averageDuration = Some(100.0),
+      namespaceLimit = 10,
+      actionLimit = 5,
+      maxActionConcurrency = 3,
+      stateName = Running,
+      recipient = testProbe.ref)
+
+    decisionMaker ! msg
+
+    // one container already exists with an action limit of 5. There are currently 7 containers in namespace
+    // so can only add 3 more even if that only gives this action 4 containers when it has an action limit of 5
+    testProbe.expectMsg(DecisionResults(EnableNamespaceThrottling(false), 3))
   }
 }

@@ -611,7 +611,12 @@ class FunctionPullingContainerProxy(
       if (runningActivations.isEmpty) {
         logging.info(this, s"The Client closed in state: $stateName, action: ${data.action}")
         // Stop ContainerProxy(ActivationClientProxy will stop also when send ClientClosed to ContainerProxy).
-        cleanUp(data.container, None, false)
+        cleanUp(
+          data.container,
+          data.invocationNamespace,
+          data.action.fullyQualifiedName(withVersion = true),
+          data.action.rev,
+          None)
       } else {
         logging.info(
           this,
@@ -915,13 +920,17 @@ class FunctionPullingContainerProxy(
 
       get(entityStore, actionid.id, actionid.rev, actionid.rev != DocRevision.empty, false)
         .flatMap { action =>
-          action.toExecutableWhiskAction match {
-            case Some(executable) =>
-              Future.successful(RunActivation(executable, msg))
-            case None =>
-              logging
-                .error(this, s"non-executable action reached the invoker ${action.fullyQualifiedName(false)}")
-              Future.failed(new IllegalStateException("non-executable action reached the invoker"))
+          {
+            // action that exceed the limit cannot be executed
+            action.limits.checkLimits(msg.user)
+            action.toExecutableWhiskAction match {
+              case Some(executable) =>
+                Future.successful(RunActivation(executable, msg))
+              case None =>
+                logging
+                  .error(this, s"non-executable action reached the invoker ${action.fullyQualifiedName(false)}")
+                Future.failed(new IllegalStateException("non-executable action reached the invoker"))
+            }
           }
         }
         .recoverWith {
@@ -939,6 +948,8 @@ class FunctionPullingContainerProxy(
             val response = t match {
               case _: NoDocumentException =>
                 ExecutionResponse.applicationError(Messages.actionRemovedWhileInvoking)
+              case e: ActionLimitsException =>
+                ExecutionResponse.applicationError(e.getMessage) // return generated failed message
               case _: DocumentTypeMismatchException | _: DocumentUnreadable =>
                 ExecutionResponse.whiskError(Messages.actionMismatchWhileInvoking)
               case e: Throwable =>
@@ -1093,6 +1104,8 @@ class FunctionPullingContainerProxy(
             env.toJson.asJsObject,
             actionTimeout,
             action.limits.concurrency.maxConcurrent,
+            msg.user.limits.allowedMaxPayloadSize,
+            msg.user.limits.allowedTruncationSize,
             resumeRun.isDefined)(msg.transid)
           .map {
             case (runInterval, response) =>

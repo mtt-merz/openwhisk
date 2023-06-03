@@ -212,13 +212,15 @@ trait WhiskActionsApi extends WhiskCollectionAPI with PostActionActivation with 
     parameter('overwrite ? false) { overwrite =>
       entity(as[WhiskActionPut]) { content =>
         val request = content.resolve(user.namespace)
-        val checkAdditionalPrivileges = entitleReferencedEntities(user, Privilege.READ, request.exec).flatMap {
-          case _ => entitlementProvider.check(user, content.exec)
-        }
+        val check = for {
+          checkLimits <- checkActionLimits(user, content)
+          checkAdditionalPrivileges <- entitleReferencedEntities(user, Privilege.READ, request.exec).flatMap(_ =>
+            entitlementProvider.check(user, content.exec))
+        } yield (checkAdditionalPrivileges, checkLimits)
 
-        onComplete(checkAdditionalPrivileges) {
+        onComplete(check) {
           case Success(_) =>
-            putEntity(WhiskAction, entityStore, entityName.toDocId, overwrite, update(user, request) _, () => {
+            putEntity(WhiskAction, entityStore, entityName.toDocId, overwrite, update(user, request), () => {
               make(user, entityName, request)
             })
           case Failure(f) =>
@@ -453,7 +455,8 @@ trait WhiskActionsApi extends WhiskCollectionAPI with PostActionActivation with 
         l.timeout getOrElse TimeLimit(),
         l.memory getOrElse MemoryLimit(),
         l.logs getOrElse LogLimit(),
-        l.concurrency getOrElse ConcurrencyLimit())
+        l.concurrency getOrElse IntraConcurrencyLimit(),
+        l.instances)
     } getOrElse ActionLimits()
     // This is temporary while we are making sequencing directly supported in the controller.
     // The parameter override allows this to work with Pipecode.code. Any parameters other
@@ -501,37 +504,41 @@ trait WhiskActionsApi extends WhiskCollectionAPI with PostActionActivation with 
   /** Creates a WhiskAction from PUT content, generating default values where necessary. */
   private def make(user: Identity, entityName: FullyQualifiedEntityName, content: WhiskActionPut)(
     implicit transid: TransactionId) = {
-    content.exec map {
-      case seq: SequenceExec =>
-        // check that the sequence conforms to max length and no recursion rules
-        checkSequenceActionLimits(entityName, seq.components) map { _ =>
-          makeWhiskAction(content.replace(seq), entityName)
-        }
-      case supportedExec if !supportedExec.deprecated =>
-        Future successful makeWhiskAction(content, entityName)
-      case deprecatedExec =>
-        Future failed RejectRequest(BadRequest, runtimeDeprecated(deprecatedExec))
+    checkInstanceConcurrencyLessThanNamespaceConcurrency(user, content) flatMap { _ =>
+      content.exec map {
+        case seq: SequenceExec =>
+          // check that the sequence conforms to max length and no recursion rules
+          checkSequenceActionLimits(entityName, seq.components) map { _ =>
+            makeWhiskAction(content.replace(seq), entityName)
+          }
+        case supportedExec if !supportedExec.deprecated =>
+          Future successful makeWhiskAction(content, entityName)
+        case deprecatedExec =>
+          Future failed RejectRequest(BadRequest, runtimeDeprecated(deprecatedExec))
 
-    } getOrElse Future.failed(RejectRequest(BadRequest, "exec undefined"))
+      } getOrElse Future.failed(RejectRequest(BadRequest, "exec undefined"))
+    }
   }
 
   /** Updates a WhiskAction from PUT content, merging old action where necessary. */
   private def update(user: Identity, content: WhiskActionPut)(action: WhiskAction)(implicit transid: TransactionId) = {
-    content.exec map {
-      case seq: SequenceExec =>
-        // check that the sequence conforms to max length and no recursion rules
-        checkSequenceActionLimits(FullyQualifiedEntityName(action.namespace, action.name), seq.components) map { _ =>
-          updateWhiskAction(content.replace(seq), action)
+    checkInstanceConcurrencyLessThanNamespaceConcurrency(user, content) flatMap { _ =>
+      content.exec map {
+        case seq: SequenceExec =>
+          // check that the sequence conforms to max length and no recursion rules
+          checkSequenceActionLimits(FullyQualifiedEntityName(action.namespace, action.name), seq.components) map { _ =>
+            updateWhiskAction(content.replace(seq), action)
+          }
+        case supportedExec if !supportedExec.deprecated =>
+          Future successful updateWhiskAction(content, action)
+        case deprecatedExec =>
+          Future failed RejectRequest(BadRequest, runtimeDeprecated(deprecatedExec))
+      } getOrElse {
+        if (!action.exec.deprecated) {
+          Future successful updateWhiskAction(content, action)
+        } else {
+          Future failed RejectRequest(BadRequest, runtimeDeprecated(action.exec))
         }
-      case supportedExec if !supportedExec.deprecated =>
-        Future successful updateWhiskAction(content, action)
-      case deprecatedExec =>
-        Future failed RejectRequest(BadRequest, runtimeDeprecated(deprecatedExec))
-    } getOrElse {
-      if (!action.exec.deprecated) {
-        Future successful updateWhiskAction(content, action)
-      } else {
-        Future failed RejectRequest(BadRequest, runtimeDeprecated(action.exec))
       }
     }
   }
@@ -545,7 +552,8 @@ trait WhiskActionsApi extends WhiskCollectionAPI with PostActionActivation with 
         l.timeout getOrElse action.limits.timeout,
         l.memory getOrElse action.limits.memory,
         l.logs getOrElse action.limits.logs,
-        l.concurrency getOrElse action.limits.concurrency)
+        l.concurrency getOrElse action.limits.concurrency,
+        if (l.instances.isDefined) l.instances else action.limits.instances)
     } getOrElse action.limits
 
     // This is temporary while we are making sequencing directly supported in the controller.
@@ -628,6 +636,23 @@ trait WhiskActionsApi extends WhiskCollectionAPI with PostActionActivation with 
     })
   }
 
+  private def checkActionLimits(user: Identity, content: WhiskActionPut)(
+    implicit transid: TransactionId): Future[Unit] = {
+    logging.debug(this, "checking the namespace and system limit for action")
+    try {
+      // check namespace limits
+      content.limits foreach { limit =>
+        limit.memory foreach (_.checkNamespaceLimit(user))
+        limit.timeout foreach (_.checkNamespaceLimit(user))
+        limit.logs foreach (_.checkNamespaceLimit(user))
+        limit.concurrency foreach (_.checkNamespaceLimit(user))
+      }
+      Future.successful(())
+    } catch {
+      case e: ActionLimitsException => Future failed RejectRequest(BadRequest, e.getMessage)
+    }
+  }
+
   /**
    * Checks that the sequence is not cyclic and that the number of atomic actions in the "inlined" sequence is lower than max allowed.
    *
@@ -663,6 +688,25 @@ trait WhiskActionsApi extends WhiskCollectionAPI with PostActionActivation with 
       case _: SequenceWithCycle        => Future failed RejectRequest(BadRequest, sequenceIsCyclic)
       case _: NoDocumentException      => Future failed RejectRequest(BadRequest, sequenceComponentNotFound)
     }
+  }
+
+  private def checkInstanceConcurrencyLessThanNamespaceConcurrency(user: Identity, content: WhiskActionPut)(
+    implicit transid: TransactionId): Future[Unit] = {
+    val namespaceConcurrencyLimit =
+      user.limits.concurrentInvocations.getOrElse(whiskConfig.actionInvokeConcurrentLimit.toInt)
+    content.limits
+      .map(
+        l =>
+          l.instances
+            .map(
+              m =>
+                if (m.maxConcurrentInstances > namespaceConcurrencyLimit)
+                  Future failed RejectRequest(
+                    BadRequest,
+                    maxActionInstanceConcurrencyExceedsNamespace(namespaceConcurrencyLimit))
+                else Future.successful({}))
+            .getOrElse(Future.successful({})))
+      .getOrElse(Future.successful({}))
   }
 
   /**
