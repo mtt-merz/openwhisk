@@ -28,6 +28,10 @@ import akka.actor.FSM
 import akka.pattern.pipe
 import org.apache.openwhisk.common.Logging
 import org.apache.openwhisk.common.TransactionId
+import org.apache.openwhisk.connector.kafka.{KafkaConsumerConnector, KafkaNotEnabled}
+import spray.json.JsNumber
+
+import java.nio.charset.StandardCharsets
 
 trait MessageConsumer {
 
@@ -72,6 +76,9 @@ object MessageFeed {
 
   /** Indicates the fill operation has completed. */
   private case class FillCompleted(messages: Seq[(String, Int, Long, Array[Byte])])
+
+  /** Indicates the consumer should move back the offset to a valid state. */
+  case class ChangeOffset(offset: Long)
 }
 
 /**
@@ -128,8 +135,6 @@ class MessageFeed(description: String,
     case Event(Ready, _) =>
       fillPipeline()
       goto(FillingPipeline)
-
-    case _ => stay
   }
 
   // wait for fill to complete, and keep filling if there is
@@ -150,8 +155,6 @@ class MessageFeed(description: String,
       } else {
         goto(DrainingPipeline)
       }
-
-    case _ => stay
   }
 
   when(DrainingPipeline) {
@@ -162,6 +165,12 @@ class MessageFeed(description: String,
         fillPipeline()
         goto(FillingPipeline)
       } else stay
+  }
+
+  whenUnhandled {
+    case Event(ChangeOffset(offset), _) =>
+      changeConsumerOffset(offset)
+      stay
 
     case _ => stay
   }
@@ -213,7 +222,13 @@ class MessageFeed(description: String,
       outstandingMessages = outstandingMessages.tail
 
       if (logHandoff) logging.debug(this, s"processing $topic[$partition][$offset] ($occupancy/$handlerCapacity)")
-      handler(bytes)
+      handler(
+        // Try parsing bytes as an ActivationMessage instance,in order to record the message offset
+        ActivationMessage
+          .parse(new String(bytes, StandardCharsets.UTF_8))
+          .toOption
+          .map(_.addContentField("offset" -> JsNumber(offset)).serialize.getBytes(StandardCharsets.UTF_8))
+          .getOrElse(bytes))
       handlerCapacity -= 1
 
       sendOutstandingMessages()
@@ -244,4 +259,14 @@ class MessageFeed(description: String,
       maximumHandlerCapacity
     }
   }
+
+  private def changeConsumerOffset(offset: Long): Unit =
+    consumer match {
+      case consumer: KafkaConsumerConnector =>
+        consumer.changeOffset(offset)
+        outstandingMessages = immutable.Queue.empty[(String, Int, Long, Array[Byte])]
+
+      case _ =>
+        throw KafkaNotEnabled("changeConsumerOffset")
+    }
 }

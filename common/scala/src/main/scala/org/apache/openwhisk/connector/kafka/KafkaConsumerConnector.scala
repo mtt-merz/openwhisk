@@ -27,16 +27,21 @@ import pureconfig.generic.auto._
 import org.apache.openwhisk.common.{Logging, LoggingMarkers, MetricEmitter, Scheduler}
 import org.apache.openwhisk.connector.kafka.KafkaConfiguration._
 import org.apache.openwhisk.core.ConfigKeys
-import org.apache.openwhisk.core.connector.MessageConsumer
+import org.apache.openwhisk.core.connector.{ActivationMessage, MessageConsumer}
 import org.apache.openwhisk.utils.Exceptions
 import org.apache.openwhisk.utils.TimeHelpers._
 
+import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 import scala.concurrent.{blocking, ExecutionContext, Future}
 import scala.util.Failure
 
 case class KafkaConsumerConfig(sessionTimeoutMs: Long)
+case class KafkaNotEnabled(operation: String)
+    extends Exception(
+      s"The operation $operation needs Kafka." +
+        s"MessageProvider SPI should be set to 'org.apache.openwhisk.connector.kafka.KafkaMessagingProvider'")
 
 class KafkaConsumerConnector(
   kafkahost: String,
@@ -89,6 +94,15 @@ class KafkaConsumerConnector(
       response.map { r =>
         // record the time between producing the message and reading it
         MetricEmitter.emitHistogramMetric(delayMetric, (now - r.timestamp).max(0))
+
+        val msg = ActivationMessage
+          .parse(new String(r.value, StandardCharsets.UTF_8))
+          .toOption
+          .map(msg => s"$msg")
+          .getOrElse("")
+        if (msg.nonEmpty)
+          println(s"\nPeeked ${r.offset}\t msg = $msg\n")
+
         (r.topic, r.partition, r.offset, r.value)
       }
     } catch {
@@ -142,6 +156,13 @@ class KafkaConsumerConnector(
   override def close(): Unit = synchronized {
     logging.info(this, s"closing consumer for '$topic'")
     consumer.close()
+  }
+
+  /** Updates the offset of the current kafka consumer to the given one. */
+  def changeOffset(offset: Long): Unit = synchronized {
+    logging.info(this, s"Consumer offset for '$topic' changed from ${this.offset} to $offset")
+    val partition = new TopicPartition(topic, 0)
+    consumer.seek(partition, offset)
   }
 
   /** Creates a new kafka consumer and subscribes to topic list if given. */
