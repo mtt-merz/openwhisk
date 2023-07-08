@@ -51,12 +51,13 @@ env:
   GH_BUILD: ${{ github.event_name }}-${{ github.sha }}
   GH_BRANCH: ${{ github.head_ref || github.ref_name }}
 
+  # https://ge.apache.org
+  GRADLE_ENTERPRISE_ACCESS_KEY: ${{ secrets.GE_ACCESS_TOKEN }}
+
 jobs:
   openwhisk:
     runs-on: ubuntu-22.04
     continue-on-error: false
-    strategy:
-      fail-fast: true
     steps:
       - name: Checkout
         uses: actions/checkout@v3
