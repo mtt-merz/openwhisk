@@ -155,12 +155,12 @@ object RunController {
   def of(run: Run)(implicit logging: Logging): RunController = {
     implicit val transactionId: TransactionId = run.msg.transid
 
-    val id = run.msg.getContentField("actor_id").asInstanceOf[JsString].value
+    val name = run.msg.getContentField("actor_name").asInstanceOf[JsString].value
     val kind = run.msg.action.name.asString
 
-    val key = (id, kind)
+    val key = (name, kind)
     controllers.getOrElse(key, {
-      val binding = new RunController(id, kind)
+      val binding = new RunController(name, kind)
       controllers += (key -> binding)
       logging.info(this, s"Controller initialized for ${binding.label}")
 

@@ -179,7 +179,7 @@ case class WarmedData(override val container: Container,
 // Events received by the actor
 case class Start(exec: CodeExec[_], memoryLimit: ByteSize, ttl: Option[FiniteDuration] = None)
 case class Run(action: ExecutableWhiskAction, msg: ActivationMessage, retryLogDeadline: Option[Deadline] = None) {
-  val actorId: String = msg.getContentField("actor_id").asInstanceOf[JsString].value
+  val actorId: String = msg.getContentField("actor_name").asInstanceOf[JsString].value
   var offset: Long = msg.getContentField("offset").asInstanceOf[JsNumber].value.toLong
 }
 
