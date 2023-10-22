@@ -127,10 +127,10 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
       logging.info(this, s"Job #${r.offset} SKIPPED, process buffer or feed\n")(r.msg.transid)
       processBufferOrFeed()
 
-    // Job not received in order, add to queue.
-    case r: Run if !r.canBeExecutedNow =>
-      logging.info(this, s"Job #${r.offset} is NOT in order")(r.msg.transid)
-      runBuffer = runBuffer.enqueue(r)
+//    // Job not received in order, add to queue.
+//    case r: Run if !r.canBeExecutedNow =>
+//      logging.info(this, s"Job #${r.offset} is NOT in order")(r.msg.transid)
+//      runBuffer = runBuffer.enqueue(r)
 
     // Job received correctly, execute.
     case r: Run =>
@@ -362,7 +362,7 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
   def processBufferOrFeed() = {
     // If buffer has more items, and head has not already been resent, send next one, otherwise get next from feed.
     runBuffer.dequeueOption match {
-      case Some((run, _)) if run.canBeExecutedNext => //run the first from buffer
+      case Some((run, _)) => //run the first from buffer
         implicit val tid = run.msg.transid
         //avoid sending dupes
         if (resent.isEmpty) {
