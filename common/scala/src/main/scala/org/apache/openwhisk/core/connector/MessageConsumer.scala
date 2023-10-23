@@ -28,6 +28,9 @@ import akka.actor.FSM
 import akka.pattern.pipe
 import org.apache.openwhisk.common.Logging
 import org.apache.openwhisk.common.TransactionId
+import spray.json.JsNumber
+
+import java.nio.charset.StandardCharsets
 
 trait MessageConsumer {
 
@@ -213,7 +216,13 @@ class MessageFeed(description: String,
       outstandingMessages = outstandingMessages.tail
 
       if (logHandoff) logging.debug(this, s"processing $topic[$partition][$offset] ($occupancy/$handlerCapacity)")
-      handler(bytes)
+      handler(
+        // Try parsing bytes as an ActivationMessage instance,in order to record the message offset
+        ActivationMessage
+          .parse(new String(bytes, StandardCharsets.UTF_8))
+          .toOption
+          .map(_.addContentField("offset" -> JsNumber(offset)).serialize.getBytes(StandardCharsets.UTF_8))
+          .getOrElse(bytes))
       handlerCapacity -= 1
 
       sendOutstandingMessages()
