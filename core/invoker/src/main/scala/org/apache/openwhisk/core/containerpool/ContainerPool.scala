@@ -127,10 +127,10 @@ class ContainerPool(childFactory: ActorRefFactory => ActorRef,
       logging.info(this, s"Job #${r.offset} SKIPPED, process buffer or feed\n")(r.msg.transid)
       processBufferOrFeed()
 
-//    // Job not received in order, add to queue.
-//    case r: Run if !r.canBeExecutedNow =>
-//      logging.info(this, s"Job #${r.offset} is NOT in order")(r.msg.transid)
-//      runBuffer = runBuffer.enqueue(r)
+   // Job not received in order, add to queue.
+   case r: Run if !r.canBeExecutedNow =>
+     logging.info(this, s"Job #${r.offset} is NOT in order")(r.msg.transid)
+     runBuffer = runBuffer.enqueue(r)
 
     // Job received correctly, execute.
     case r: Run =>
