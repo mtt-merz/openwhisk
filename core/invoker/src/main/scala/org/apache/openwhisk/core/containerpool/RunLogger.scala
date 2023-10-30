@@ -8,7 +8,7 @@ import java.util.Calendar
 
 object RunLogger {
   private val path: String = {
-    val path = s"/home/m/Workspaces/thesis/logs/$formattedDateTime"
+    val path = s"./logs"
     new File(path).mkdir()
 
     path
@@ -27,34 +27,41 @@ object RunLogger {
   }
 
   def arrival(job: Run): Unit = {
-    val msg = s"${job.offset} " +
+    val msg = s"ARRIVAL - ${job.offset} " +
       s"${getActorLabel(job)} ${job.msg.getContentField("message")} " +
       s"${System.currentTimeMillis()}"
 
-    printOnFile(msg, "arrival")
+    printOnFile(msg)
   }
 
-  def execution(job: Run, interval: Interval): Unit = {
-    val msg = s"${job.offset} " +
-      s"${getActorLabel(job)} ${job.msg.getContentField("message")} " +
-      s"${System.currentTimeMillis()} " +
-      s"${interval.duration.length}"
+  def buffered(job: Run): Unit = {
+    val msg = s"BUFFER - ${job.offset} " +
+      s"${getActorLabel(job)} ${job.msg.getContentField("message")}" +
+      s"${System.currentTimeMillis()}"
 
-    printOnFile(msg, "execution")
+    printOnFile(msg)
+  }
+
+  def execution(job: Run): Unit = {
+    val msg = s"EXECUTION - ${job.offset} " +
+      s"${getActorLabel(job)} ${job.msg.getContentField("message")} " +
+      s"${System.currentTimeMillis()} "
+
+    printOnFile(msg)
   }
 
   def result(job: Run, interval: Interval, response: ActivationResponse): Unit = {
-    val msg = s"${job.offset} " +
+    val msg = s"RESULT - ${job.offset} " +
       s"${getActorLabel(job)} ${job.msg.getContentField("message")} " +
       s"${System.currentTimeMillis()} " +
       s"${interval.duration.length}\n" +
       s"${response.result.get.prettyPrint}\n"
 
-    printOnFile(msg, "result")
+    printOnFile(msg)
   }
 
-  private def printOnFile(msg: String, fileName: String): Unit = {
-    val writer = new FileWriter(new File(s"$path/$fileName.csv"), true)
+  private def printOnFile(msg: String): Unit = {
+    val writer = new FileWriter(new File(s"$path/$formattedDateTime.csv"), true)
     writer.write(s"$msg\n")
     writer.close()
   }

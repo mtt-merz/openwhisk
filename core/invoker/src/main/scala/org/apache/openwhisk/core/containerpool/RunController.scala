@@ -113,6 +113,8 @@ case class RunController(private val id: String,
    */
   private def onExecutionStarted(container: Container)(implicit job: Run): Unit = {
     assert(runningOffset.isEmpty)
+    RunLogger.execution(job)
+
     runningOffset = Option(job.offset)
 
     val cId = container.containerId
@@ -138,7 +140,6 @@ case class RunController(private val id: String,
       snapshotTimestamp = Calendar.getInstance().getTime
     }
 
-    RunLogger.execution(job, runInterval)
     RunLogger.result(job, runInterval, response)
   }
 
@@ -241,12 +242,12 @@ object RunController {
      */
     def canBeExecutedNow: Boolean = run.offset <= globalOffset
 
-    /**
-     * Ensure the request can be executed next.
-     *
-     * @return true if the order is correct, false otherwise.
-     */
-    def canBeExecutedNext: Boolean = run.offset <= globalOffset + 1
+//    /**
+//     * Ensure the request can be executed next.
+//     *
+//     * @return true if the order is correct, false otherwise.
+//     */
+//    def canBeExecutedNext: Boolean = run.offset <= globalOffset + 1
 
     /**
      * Check if the job should be executed.

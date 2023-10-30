@@ -34,6 +34,7 @@ class RunBuffer(private val content: ListMap[Option[ContainerId], SortedSet[Run]
    */
   def enqueue(run: Run): RunBuffer = {
     logging.info(this, s"Enqueue request #${run.offset}\n")(run.msg.transid)
+    RunLogger.buffered(run)
 
     val containerId: Option[ContainerId] = RunController.of(run).boundContainerId
     new RunBuffer(content.updated(containerId, content.get(containerId) match {
