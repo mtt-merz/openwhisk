@@ -230,23 +230,23 @@ object RunController {
   implicit class ImplicitRun(run: Run)(implicit val logging: Logging) {
     implicit val transactionId: TransactionId = run.msg.transid
 
-//    /**
-//     * Ensure the request has been received in the correct order (it is not guaranteed by OpenWhisk).
-//     * If the order is not correct, the request should be enqueued in the buffer.
-//     *
-//     * While the requests are processed in order till the InvokerReactive level, they arrives to the ContainerPool
-//     * in a different order. It depends on the time needed by each request to fetch the action code from the DB.
-//     *
-//     * @return true if the order is correct, false otherwise.
-//     */
-//    def canBeExecutedNow: Boolean = run.offset <= globalOffset
-//
-//    /**
-//     * Ensure the request can be executed next.
-//     *
-//     * @return true if the order is correct, false otherwise.
-//     */
-//    def canBeExecutedNext: Boolean = run.offset <= globalOffset + 1
+    /**
+     * Ensure the request has been received in the correct order (it is not guaranteed by OpenWhisk).
+     * If the order is not correct, the request should be enqueued in the buffer.
+     *
+     * While the requests are processed in order till the InvokerReactive level, they arrives to the ContainerPool
+     * in a different order. It depends on the time needed by each request to fetch the action code from the DB.
+     *
+     * @return true if the order is correct, false otherwise.
+     */
+    def canBeExecutedNow: Boolean = run.offset <= globalOffset
+
+    /**
+     * Ensure the request can be executed next.
+     *
+     * @return true if the order is correct, false otherwise.
+     */
+    def canBeExecutedNext: Boolean = run.offset <= globalOffset + 1
 
     /**
      * Check if the job should be executed.
