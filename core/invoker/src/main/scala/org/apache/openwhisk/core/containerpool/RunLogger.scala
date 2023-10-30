@@ -11,12 +11,10 @@ object RunLogger {
     val path = s"./logs"
     new File(path).mkdir()
 
-    path
-  }
-
-  private def formattedDateTime: String = {
     val formatter = new SimpleDateFormat("YYYY-MM-DD'T'HH:mm:ss.sss")
-    formatter.format(Calendar.getInstance().getTime)
+
+
+    s"$path/${formatter.format(Calendar.getInstance().getTime)}.csv"
   }
 
   private def getActorLabel(job: Run): String = {
@@ -61,7 +59,7 @@ object RunLogger {
   }
 
   private def printOnFile(msg: String): Unit = {
-    val writer = new FileWriter(new File(s"$path/$formattedDateTime.csv"), true)
+    val writer = new FileWriter(new File(path), true)
     writer.write(s"$msg\n")
     writer.close()
   }
