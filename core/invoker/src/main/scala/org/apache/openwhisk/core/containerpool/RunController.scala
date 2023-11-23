@@ -84,17 +84,18 @@ case class RunController(private val id: String,
    *
    * @return true if the snapshot should be performed, false otherwise.
    */
-  private def shouldPerformSnapshot: Boolean = {
-    val currentDate = Calendar.getInstance().getTime
-    val dateInterval = currentDate.getTime - snapshotTimestamp.getTime
-
-    if (dateInterval >= snapshotTimeInterval) true
-    else if (runningOffset.isEmpty) false
-    else {
-      val actionsCount = runningOffset.get - snapshotOffset
-      actionsCount >= snapshotActionsCount
-    }
-  }
+  private def shouldPerformSnapshot: Boolean = false
+//  {
+//    val currentDate = Calendar.getInstance().getTime
+//    val dateInterval = currentDate.getTime - snapshotTimestamp.getTime
+//
+//    if (dateInterval >= snapshotTimeInterval) true
+//    else if (runningOffset.isEmpty) false
+//    else {
+//      val actionsCount = runningOffset.get - snapshotOffset
+//      actionsCount >= snapshotActionsCount
+//    }
+//  }
 
   /**
    * Check if the state is being restored.
